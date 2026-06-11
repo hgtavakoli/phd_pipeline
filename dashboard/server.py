@@ -111,6 +111,23 @@ def stop_job():
 
 # --- AAS helpers ------------------------------------------------------------------
 
+def _aas_get_property(node, id_short):
+    """Recursively find the first AAS Property value by idShort."""
+    if isinstance(node, dict):
+        if node.get("modelType") == "Property" and node.get("idShort") == id_short:
+            return node.get("value")
+        for v in node.values():
+            r = _aas_get_property(v, id_short)
+            if r is not None:
+                return r
+    elif isinstance(node, list):
+        for v in node:
+            r = _aas_get_property(v, id_short)
+            if r is not None:
+                return r
+    return None
+
+
 def _aas_set_properties(node, targets):
     """Recursively set AAS Property values by idShort."""
     if isinstance(node, dict):
@@ -372,12 +389,43 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(files)
 
         if route == "/api/components":
-            # Component/class list read live from SmartSDG config.yaml —
-            # COMPONENT_USD_MAP order defines the global YOLO class IDs.
+            # Components cross-checked across three sources:
+            #   1. config.yaml COMPONENT_USD_MAP — defines the global YOLO class
+            #      IDs (list order) and the USD filename per component
+            #   2. the template AAS classes list — the canonical class record
+            #   3. the assets folder on disk — is the USD file actually there?
+            # A component is selectable only if its USD file exists. Components
+            # declared in the AAS but absent from config/disk appear grayed out.
             try:
                 import yaml
                 cfg = yaml.safe_load((SMARTSDG / "src" / "config" / "config.yaml").read_text(encoding="utf-8"))
-                return self._json(list(cfg["COMPONENT_USD_MAP"].keys()))
+                usd_map = cfg["COMPONENT_USD_MAP"]
+                assets_dir = SMARTSDG / cfg["paths"]["base"] / cfg["paths"]["components_rel"]
+                aas_names = []
+                try:
+                    raw = _aas_get_property(json.loads(TEMPLATE_AAS.read_text(encoding="utf-8-sig")), "names")
+                    aas_names = [n.strip() for n in (raw or "").split(",") if n.strip()]
+                except Exception:
+                    pass
+
+                items = []
+                for name, usd in usd_map.items():  # config order = class ID order
+                    exists = (assets_dir / usd).exists()
+                    items.append({
+                        "name": name, "usd": usd, "available": exists,
+                        "reason": "" if exists else f"USD file missing in assets: {usd}",
+                    })
+                for name in aas_names:             # AAS-only classes -> grayed
+                    if name not in usd_map:
+                        items.append({"name": name, "usd": None, "available": False,
+                                      "reason": "declared in AAS but not in config.yaml COMPONENT_USD_MAP"})
+
+                warning = ""
+                if aas_names and aas_names != list(usd_map.keys()):
+                    warning = ("AAS class list and config.yaml COMPONENT_USD_MAP differ — "
+                               f"AAS: {aas_names} vs config: {list(usd_map.keys())}. "
+                               "Class IDs follow config.yaml; align the AAS template.")
+                return self._json({"components": items, "warning": warning})
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
 

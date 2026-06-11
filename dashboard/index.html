@@ -73,6 +73,7 @@
       <div><label>Components</label>
         <span class="muted"><a href="#" onclick="setAll(true);return false">all</a> · <a href="#" onclick="setAll(false);return false">none</a></span>
         <div class="chips" id="comps"></div>
+        <div id="compWarning" style="color:var(--yellow);font-size:.78rem;margin-top:4px"></div>
       </div>
     </div>
     <div class="row">
@@ -220,9 +221,11 @@ git push</pre>
 </main>
 
 <script>
-// Fallback only — the live list is fetched from SmartSDG config.yaml
-// (COMPONENT_USD_MAP order = global YOLO class IDs).
+// Fallback only — the live list is fetched from /api/components, which
+// cross-checks the AAS class list, config.yaml COMPONENT_USD_MAP (order =
+// global YOLO class IDs), and the USD files on disk.
 let COMPONENTS = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassis","Rchassis","BlackCabin"];
+let COMP_ITEMS = COMPONENTS.map(n=>({name:n, available:true, reason:''}));
 const $ = id => document.getElementById(id);
 
 // ---------- tabs ----------
@@ -237,14 +240,22 @@ function showTab(name){
 
 // ---------- component chips ----------
 function buildChips(){
-  $('comps').innerHTML = COMPONENTS.map(c=>
-    `<label><input type="checkbox" class="comp" value="${c}" ${c==='GlueGun'?'checked':''} onchange="updatePreview()"> ${c}</label>`).join('');
+  $('comps').innerHTML = COMP_ITEMS.map(c=>
+    `<label title="${c.available ? (c.usd||'') : c.reason}" style="${c.available?'':'opacity:.38;cursor:not-allowed'}">
+       <input type="checkbox" class="comp" value="${c.name}" ${c.available?'':'disabled'}
+              ${c.name==='GlueGun'&&c.available?'checked':''} onchange="updatePreview()">
+       ${c.name}${c.available?'':' ⛔'}</label>`).join('');
 }
 buildChips();
-fetch('/api/components').then(r=>r.json()).then(list=>{
-  if(Array.isArray(list) && list.length){ COMPONENTS = list; buildChips(); updatePreview(); }
+fetch('/api/components').then(r=>r.json()).then(d=>{
+  if(d && Array.isArray(d.components) && d.components.length){
+    COMP_ITEMS = d.components;
+    COMPONENTS = d.components.filter(c=>c.usd).map(c=>c.name); // class-ID order (config map)
+    $('compWarning').textContent = d.warning || '';
+    buildChips(); updatePreview();
+  }
 });
-function setAll(v){document.querySelectorAll('.comp').forEach(c=>c.checked=v);updatePreview();}
+function setAll(v){document.querySelectorAll('.comp:not(:disabled)').forEach(c=>c.checked=v);updatePreview();}
 const selectedComps = ()=>[...document.querySelectorAll('.comp:checked')].map(c=>c.value);
 
 // ---------- form -> payload + preview ----------
