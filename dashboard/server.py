@@ -204,13 +204,21 @@ def build_train_cmd(p):
     safe = (AAS_DIR / aas).resolve()
     if not str(safe).startswith(str(AAS_DIR.resolve())) or not safe.exists():
         raise ValueError(f"AAS file not found: {safe}")
-    # Optional camera subset: train on camera 1, camera 2, or both. The chosen
-    # AAS is copied to a temp file with cameras_to_train overridden, so the
-    # original config stays untouched.
-    cameras = p.get("cameras")
-    if cameras:
+    # Per-run overrides (cameras + training hyperparameters). The chosen AAS is
+    # copied to a temp file with the overrides applied, so originals stay
+    # untouched. img_size/batch_size idShorts also exist in the evaluation
+    # section and are updated consistently.
+    overrides = {}
+    if p.get("cameras"):
+        overrides["cameras_to_train"] = ", ".join(p["cameras"])
+    for key in ("epochs", "img_size", "batch_size", "save_period"):
+        if p.get(key) not in (None, "", 0):
+            overrides[key] = int(p[key])
+    if p.get("weights"):
+        overrides["weights"] = p["weights"]
+    if overrides:
         data = json.loads(safe.read_text(encoding="utf-8-sig"))
-        _aas_set_properties(data, {"cameras_to_train": ", ".join(cameras)})
+        _aas_set_properties(data, overrides)
         tmp = Path(tempfile.gettempdir()) / f"dashboard_run_{safe.stem}.json"
         tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
         safe = tmp
@@ -355,6 +363,11 @@ class Handler(BaseHTTPRequestHandler):
                         key=lambda f: f.stat().st_mtime, reverse=True) if (AAS_DIR / "datasets").exists() else []
             files = [str(f.relative_to(AAS_DIR)).replace("\\", "/") for f in ds] + top
             return self._json(files)
+
+        if route == "/api/weights":
+            # Pretrained/base weights available in OD_training (for the dropdown)
+            pts = sorted(f.name for f in OD_DIR.glob("*.pt"))
+            return self._json(pts)
 
         if route == "/api/preview":
             try:

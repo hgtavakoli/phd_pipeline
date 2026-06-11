@@ -129,10 +129,20 @@
           <label><input type="checkbox" id="cam1" checked> Replicator (top-down)</label>
           <label><input type="checkbox" id="cam2" checked> Replicator_01 (orbital)</label>
         </span></div>
+    </div>
+    <div class="row">
+      <div><label>Epochs</label><input id="tEpochs" type="number" min="1" placeholder="AAS (1)" style="width:90px"></div>
+      <div><label>Image size</label>
+        <select id="tImgsz"><option value="">AAS (640)</option><option>320</option><option>480</option><option>640</option><option>800</option><option>1280</option></select></div>
+      <div><label>Batch size</label><input id="tBatch" type="number" min="1" placeholder="AAS (32)" style="width:90px"></div>
+      <div><label>Base weights</label><select id="tWeights"><option value="">AAS (./yolov12l.pt)</option></select></div>
+      <div><label>Save every N epochs</label><input id="tSave" type="number" min="1" placeholder="AAS (10)" style="width:90px"></div>
       <button class="primary" id="btnRunTrain" onclick="runTrain()">▶ Run training</button>
     </div>
-    <p class="muted">Each selected camera trains as its own run — untick one to train on a single camera only.
-    Per-dataset AAS configs (<code>CA_Modul-OD_dataset_*.json</code>) are created automatically after every generation.</p>
+    <p class="muted">Empty fields use the values stored in the selected AAS file; filled fields override them for this run only (the AAS file itself is not modified).
+    Each selected camera trains as its own run — untick one to train on a single camera.
+    Per-dataset AAS configs are created automatically after every generation (in <code>AAS\datasets\&lt;date&gt;\</code>).
+    Tip: batch 32 may exceed the RTX 2080's 8 GB at img 640 with YOLOv12-L — use 8–16, or pass <code>-1</code> for auto-fit.</p>
   </div>
 </div>
 
@@ -280,10 +290,19 @@ async function runTrain(){
   if($('cam1').checked) cams.push('Replicator');
   if($('cam2').checked) cams.push('Replicator_01');
   if(!cams.length){alert('Select at least one camera');return;}
-  const r = await post('/api/run_train', {aas_file: $('fAas').value, cameras: cams});
+  const r = await post('/api/run_train', {
+    aas_file: $('fAas').value, cameras: cams,
+    epochs: $('tEpochs').value ? +$('tEpochs').value : null,
+    img_size: $('tImgsz').value ? +$('tImgsz').value : null,
+    batch_size: $('tBatch').value ? +$('tBatch').value : null,
+    save_period: $('tSave').value ? +$('tSave').value : null,
+    weights: $('tWeights').value ? './'+$('tWeights').value : null,
+  });
   if(!r.ok){alert(r.error);return;}
   startConsole('OD training');
 }
+fetch('/api/weights').then(r=>r.json()).then(ws=>{
+  $('tWeights').innerHTML += ws.map(w=>`<option value="${w}">${w}</option>`).join('');});
 async function stopJob(){ if(confirm('Stop the running job?')) await post('/api/stop'); }
 
 // ---------- live console ----------
