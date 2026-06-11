@@ -1,0 +1,117 @@
+
+# ==============================================================================
+# All file system paths are grouped here
+# ==============================================================================
+paths:
+  base: "assets"
+  output_raw: "Datasets/unified_render_output/"
+  env_usd_rel: "env/SF_model/SDG_SF_Fixed_model_v5.usd"
+  flat_env_usd_rel: "env/SF_model/flattened_saved.usd"
+  components_rel: "Incorap_lkw"
+
+# ==============================================================================
+# All generation hyperparameters and settings are grouped here
+# ==============================================================================
+generation_params:
+  scene:
+    center_x: -4.5
+    center_y: 23.0
+    truck_z_position: 0.95
+    truck_scale: 0.01
+
+  spawning:
+    multi_spawn_radius: 0.2
+    multi_spawn_z_variation: 0.3
+
+  camera:
+    img_width: 128
+    img_height: 80
+    focal_length: 48.0
+    focus_distance: 400.0
+    f_stop: 0.0
+    orbit_radius: 1.5
+    orbit_height: 1.0
+    orbit_height_isolated: 0.85
+
+
+# --- Component & Lighting Definitions ---
+COMPONENT_USD_MAP:
+  Ylid: "YellowkLid.usd"
+  YTrailer: "YellowTrailer.usd"
+  Cabin: "Cabin.usd"
+  GlueGun: "GlueGun_new.usd"
+  BLid: "Bluelid.usd"
+  BTrailer: "BlueTrailer.usd"
+  FChassis: "Fchassis.usd"
+  Rchassis: "Rchassis.usd"
+  BlackCabin: "BlackCabin.usd"
+
+
+# --- YOLO Conversion Settings ---
+YOLO_CONVERSION:
+  OUTPUT_DIR_BASE: "Datasets/yolo_experiments"
+
+# --- YOLO Filtering Settings ---
+YOLO_FILTERING:
+  # Set 'enabled' to true to run the filter, false to skip it.
+  enabled: true
+  # Define the IoU threshold for deleting overlapping boxes.
+  IOU_THRESHOLD: 0.7
+
+LIGHT_INTENSITY_MAP:
+  Low: [5000, 500]
+  Medium: [20000, 5000]
+  High: [80000, 20000]
+
+LIGHT_TEMPERATURE_MEAN: 8000
+LIGHT_TEMPERATURE_STD: 500
+
+LIGHT_POSITIONS:
+  - [-1, 18.62, 3.95]
+  - [-1, 20.62, 3.95]
+  - [-1, 22.62, 3.95]
+  - [-1, 24.62, 3.95]
+  - [-7, 18.62, 3.95]
+  - [-7, 20.62, 3.95]
+  - [-7, 22.62, 3.95]
+  - [-7, 24.62, 3.95]
+  - [-5, 18.62, 3.95]
+  - [-5, 20.62, 3.95]
+  - [-5, 22.62, 3.95]
+  - [-5, 24.62, 3.95]
+  - [-3, 18.62, 3.95]
+  - [-3, 20.62, 3.95]
+  - [-3, 22.62, 3.95]
+  - [-3, 24.62, 3.95]
+
+
+
+# --- Simulation Backend Configuration ---
+# Renderer / ray-casting hyperparameters passed to Isaac Sim's SimulationApp.
+# width/height are auto-set from camera img_width/img_height (or --width/--height CLI).
+SIMULATION_CONFIG:
+  headless: True
+  renderer: "PathTracing"            # "PathTracing" (accurate) or "RayTracedLighting" (fast)
+  samples_per_pixel_per_frame: 8     # rays cast per pixel per frame; higher = less noise, slower (try 32-64 for final datasets)
+  max_bounces: 32                    # max diffuse/total ray bounces per path
+  max_specular_transmission_bounces: 6   # bounces through glass / specular materials
+  max_volume_bounces: 4              # bounces inside volumetric media (fog, smoke)
+  subdiv_refinement_level: 0         # mesh subdivision level (0 = off)
+  anti_aliasing: 3                   # AA mode (RayTracedLighting only): 0=off 1=TAA 2=FXAA 3=DLSS
+  denoiser: True                     # OptiX AI denoiser (lets you use low samples_per_pixel)
+  use_denoiser: True
+
+# --- Advanced RTX / Replicator carb settings (optional) ---
+# Any carb setting key can be added here; they are applied right before the
+# Replicator graph is built. Common path-tracing knobs:
+RTX_CARB_SETTINGS: {}
+#  "/rtx/pathtracing/spp": 8                       # samples per pixel per app update
+#  "/rtx/pathtracing/totalSpp": 64                 # accumulate N spp before writing the frame
+#  "/rtx/pathtracing/maxBounces": 32
+#  "/rtx/pathtracing/maxSpecularAndTransmissionBounces": 6
+#  "/rtx/pathtracing/maxVolumeBounces": 4
+#  "/rtx/pathtracing/fireflyFilter/enabled": true  # kill bright noise pixels
+#  "/rtx/pathtracing/clampSpp": 64
+#  "/rtx/post/dlss/execMode": 0                    # 0=performance 1=balanced 2=quality
+#  "/rtx/raytracing/subsurface/enabled": false
+#  "/omni/replicator/RTSubframes": 4               # extra render subframes per capture (reduces ghosting)

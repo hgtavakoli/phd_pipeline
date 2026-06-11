@@ -1,0 +1,63 @@
+# ============================================================
+#  SmartSDG Pipeline v2 — single consolidated .gitignore
+#  Rule: code + configs + docs are committed; datasets, training
+#  artifacts, model weights, and large binaries are NOT.
+# ============================================================
+
+# ----- Python -----
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.env
+
+# ----- IDE / OS -----
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# ----- Model weights (large, reproducible from training) -----
+*.pt
+*.onnx
+*.engine
+
+# ----- Stage 1: SmartSDG — generated data & heavy assets -----
+SmartSDG/Datasets/
+SmartSDG/assets/
+SmartSDG/Archive/
+**/unified_render_output/
+**/yolo_experiments/
+
+# ----- Stage 3: OD training — runs, results, datasets -----
+OD_training/results/
+OD_training/runs/
+OD_training/yolo_runs*/
+OD_training/data/
+OD_training/datasets/
+OD_training/dataset_experiments/
+OD_training/config/generated_training_config.yaml
+
+# ----- Stage 4: Active learning — working data & outputs -----
+active_learning/data/
+active_learning/output/
+
+# ----- Stage 5: Continual learning — results & generated configs -----
+continual_learning/results/
+continual_learning/cl_src/config/generated_cl_config.yaml
+
+# ----- Paper figures — generated outputs -----
+paper_visualisation/runs/
+paper_visualisation/images/
+
+# ----- Large external tools -----
+AAS/aasx-package-explorer*/
+isaacsim/
+
+# ----- Logs / temp -----
+*.log
+*.tmp
+temp_*.yaml

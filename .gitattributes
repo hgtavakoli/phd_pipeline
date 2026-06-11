@@ -1,0 +1,17 @@
+# Normalize line endings: LF in repo, native on checkout
+* text=auto
+
+# Windows scripts always CRLF
+*.bat text eol=crlf
+
+# Shell scripts always LF
+*.sh text eol=lf
+
+# Binary formats
+*.pptx binary
+*.pdf binary
+*.png binary
+*.jpg binary
+*.aasx binary
+*.pt binary
+*.usd binary

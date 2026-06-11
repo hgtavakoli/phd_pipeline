@@ -1,0 +1,107 @@
+"paths":
+  "base": "assets"
+  "output_raw": "Datasets/unified_render_output/"
+  "env_usd_rel": "env/SF_model/SDG_SF_Fixed_model_v5.usd"
+  "flat_env_usd_rel": "env/SF_model/flattened_saved.usd"
+  "components_rel": "Incorap_lkw"
+"generation_params":
+  "scene":
+    "center_x": -4.5
+    "center_y": 23.0
+    "truck_z_position": 0.95
+    "truck_scale": 0.01
+  "spawning":
+    "multi_spawn_radius": 0.3
+    "multi_spawn_z_variation": 0.3
+  "camera":
+    "img_width": 128
+    "img_height": 80
+    "focal_length": 48.0
+    "focus_distance": 400.0
+    "f_stop": 0.0
+    "orbit_radius": 1.5
+    "orbit_height": 1.0
+    "orbit_height_isolated": 0.85
+"COMPONENT_USD_MAP":
+  "Ylid": "YellowkLid.usd"
+  "YTrailer": "YellowTrailer.usd"
+  "Cabin": "Cabin.usd"
+  "GlueGun": "GlueGun_new.usd"
+  "BLid": "Bluelid.usd"
+  "BTrailer": "BlueTrailer.usd"
+  "FChassis": "Fchassis.usd"
+  "Rchassis": "Rchassis.usd"
+  "BlackCabin": "BlackCabin.usd"
+"LIGHT_INTENSITY_MAP":
+  "Low":
+  - 500
+  - 5000
+  "Medium":
+  - 5000
+  - 20000
+  "High":
+  - 20000
+  - 80000
+"LIGHT_TEMPERATURE_MEAN": 8000
+"LIGHT_TEMPERATURE_STD": 500
+"LIGHT_POSITIONS":
+- - -1
+  - 18.62
+  - 3.95
+- - -1
+  - 20.62
+  - 3.95
+- - -1
+  - 22.62
+  - 3.95
+- - -1
+  - 24.62
+  - 3.95
+- - -7
+  - 18.62
+  - 3.95
+- - -7
+  - 20.62
+  - 3.95
+- - -7
+  - 22.62
+  - 3.95
+- - -7
+  - 24.62
+  - 3.95
+- - -5
+  - 18.62
+  - 3.95
+- - -5
+  - 20.62
+  - 3.95
+- - -5
+  - 22.62
+  - 3.95
+- - -5
+  - 24.62
+  - 3.95
+- - -3
+  - 18.62
+  - 3.95
+- - -3
+  - 20.62
+  - 3.95
+- - -3
+  - 22.62
+  - 3.95
+- - -3
+  - 24.62
+  - 3.95
+"SIMULATION_CONFIG":
+  "headless": True
+  "renderer": "PathTracing"
+  "samples_per_pixel_per_frame": 32
+  "max_bounces": 32
+  "denoiser": True
+  "use_denoiser": True
+"YOLO_CONVERSION":
+  "OUTPUT_DIR_BASE": "Datasets/yolo_experiments"
+"YOLO_FILTERING":
+  "enabled": True
+  "IOU_THRESHOLD": 0.5

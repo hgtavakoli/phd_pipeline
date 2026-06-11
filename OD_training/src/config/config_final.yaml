@@ -1,0 +1,37 @@
+"paths":
+  "base_data_dir": "/netscratch/tavakoli/documents/sd_light_od/cluster_experiments/dataset_experiments"
+  "val_data_path": "/netscratch/tavakoli/documents/sd_light_od/cluster_experiments/data/val_new_2"
+  "test_data_path": "/netscratch/tavakoli/documents/sd_light_od/cluster_experiments/data/truck_new_2"
+  "custom_log_dir": "experiment_outputs_multi_mix"
+  "yolo_project_dir": "yolo_runs_multi_mix"
+"classes":
+  "names":
+  - "Ylid"
+  - "YTrailer"
+  - "Cabin"
+  - "Ggun"
+  - "BLid"
+  - "BTrailer"
+  - "FChassis"
+  - "Rchassis"
+"training":
+  "datasets_to_train": "experiment_multi"
+  "exp_names_to_train": "merged_experiment"
+  "sizes_to_train":
+  - "S"
+  - "M"
+  - "L"
+  "cameras_to_train":
+  - "camera1"
+  - "camera2"
+  "weights": "yolov12l.pt"
+  "epochs": 200
+  "img_size": 640
+  "batch_size": 32
+  "save_period": 10
+"evaluation":
+  "img_size": 640
+  "batch_size": 32
+  "split_to_eval_on": "test"
+"random_seed":
+  "RS_value": 42
