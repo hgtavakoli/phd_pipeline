@@ -126,7 +126,11 @@ def _aas_set_properties(node, targets):
 def generate_dataset_aas(dataset_rel, meta=None):
     """Clone the template AAS for a specific dataset: points base_data_dir at it,
     sets the camera folders, and names the experiment after the dataset.
-    Class names stay the full global 9-class list — label files use global IDs."""
+    Class names stay the full global 9-class list — label files use global IDs.
+
+    Files are organized by generation date: AAS/datasets/YYYY-MM-DD/<name>.json.
+    If a config for the same dataset already exists (any date), it is updated
+    in place instead of duplicated."""
     d = _safe_path(dataset_rel)
     if not d.is_dir():
         raise ValueError(f"dataset not found: {d}")
@@ -138,10 +142,17 @@ def generate_dataset_aas(dataset_rel, meta=None):
         "cameras_to_train": ", ".join(cameras),
         "exp_names_to_train": d.name,
     })
-    out = AAS_DIR / f"CA_Modul-OD_dataset_{d.name}.json"
+    filename = f"CA_Modul-OD_dataset_{d.name}.json"
+    existing = list((AAS_DIR / "datasets").rglob(filename)) if (AAS_DIR / "datasets").exists() else []
+    if existing:
+        out = existing[0]
+    else:
+        day_dir = AAS_DIR / "datasets" / time.strftime("%Y-%m-%d")
+        day_dir.mkdir(parents=True, exist_ok=True)
+        out = day_dir / filename
     # NOTE: must be written WITHOUT a UTF-8 BOM — aas_core3 rejects BOMs.
     out.write_text(json.dumps(data, indent=1), encoding="utf-8")
-    return out.name
+    return str(out.relative_to(AAS_DIR))
 
 
 # --- Command builders -----------------------------------------------------------
@@ -190,8 +201,8 @@ def build_sdg_cmd(p):
 
 def build_train_cmd(p):
     aas = p.get("aas_file", "")
-    safe = (AAS_DIR / Path(aas).name)
-    if not safe.exists():
+    safe = (AAS_DIR / aas).resolve()
+    if not str(safe).startswith(str(AAS_DIR.resolve())) or not safe.exists():
         raise ValueError(f"AAS file not found: {safe}")
     # Optional camera subset: train on camera 1, camera 2, or both. The chosen
     # AAS is copied to a temp file with cameras_to_train overridden, so the
@@ -337,7 +348,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(list_results())
 
         if route == "/api/aas":
-            files = sorted(f.name for f in AAS_DIR.glob("*.json"))
+            # Top-level pipeline configs + dated per-dataset configs, as paths
+            # relative to AAS/ (newest dataset configs first).
+            top = sorted(f.name for f in AAS_DIR.glob("*.json"))
+            ds = sorted((AAS_DIR / "datasets").rglob("*.json"),
+                        key=lambda f: f.stat().st_mtime, reverse=True) if (AAS_DIR / "datasets").exists() else []
+            files = [str(f.relative_to(AAS_DIR)).replace("\\", "/") for f in ds] + top
             return self._json(files)
 
         if route == "/api/preview":
@@ -410,8 +426,9 @@ class Handler(BaseHTTPRequestHandler):
                 if raw.is_dir():
                     shutil.rmtree(raw)
                     removed.append(str(raw.relative_to(ROOT)))
-                aas = AAS_DIR / f"CA_Modul-OD_dataset_{p.name}.json"
-                if aas.exists():
+                for aas in list(AAS_DIR.glob(f"CA_Modul-OD_dataset_{p.name}.json")) + \
+                           (list((AAS_DIR / "datasets").rglob(f"CA_Modul-OD_dataset_{p.name}.json"))
+                            if (AAS_DIR / "datasets").exists() else []):
                     aas.unlink()
                     removed.append(str(aas.relative_to(ROOT)))
                 return self._json({"ok": True, "removed": removed})
