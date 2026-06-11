@@ -14,22 +14,31 @@ from src.common import distributed_utils
 def parse_sdg_metadata_from_path(data_path_string: str) -> dict:
     """
     Parses the final directory of a path to extract SDG metadata.
+
+    Dataset names follow 'MODE_CLASS_LIGHT_ENV', where CLASS may itself contain
+    underscores/hyphens (e.g. component subsets like
+    'MULTI_GlueGun-BLid-BTrailer_Medium_withenv'), so LIGHT and ENV are parsed
+    from the END of the name, not by fixed position.
     """
+    ENV_SUFFIXES = {'plane', 'withenv', 'withoutenv', 'noenv'}
+    LIGHT_MODES = {'Low', 'Medium', 'High', 'S', 'M', 'L'}
     try:
         dir_name = Path(data_path_string).name
         parts = dir_name.split('_')
         metadata = {'raw_name': dir_name}
         metadata['mode'] = parts[0]
-        if metadata['mode'] == 'SINGLE':
-            metadata['class'] = parts[1]
-            metadata['light'] = parts[2]
-            metadata['env'] = parts[3] if len(parts) > 3 else 'noenv'
-        elif metadata['mode'] == 'MULTI':
-            metadata['class'] = 'multi'
-            metadata['light'] = parts[1]
-            metadata['env'] = parts[2] if len(parts) > 2 else 'noenv'
-        else:
+        if metadata['mode'] not in ('SINGLE', 'MULTI'):
             raise ValueError(f"Unknown mode '{metadata['mode']}' found in path.")
+
+        metadata['env'] = parts[-1] if parts[-1] in ENV_SUFFIXES else 'noenv'
+        light_part = parts[-2] if parts[-1] in ENV_SUFFIXES else parts[-1]
+        if light_part not in LIGHT_MODES:
+            raise ValueError(f"Could not find a light mode in '{dir_name}'.")
+        metadata['light'] = light_part
+
+        class_end = len(parts) - (2 if parts[-1] in ENV_SUFFIXES else 1)
+        class_parts = parts[1:class_end]
+        metadata['class'] = '_'.join(class_parts) if metadata['mode'] == 'SINGLE' else 'multi'
         return metadata
     except (IndexError, ValueError) as e:
         print(f"❌ FATAL ERROR: Could not parse SDG metadata from path: '{data_path_string}'")
@@ -53,7 +62,8 @@ def main(args):
     base_data_path = config['paths']['base_data_dir']
     sdg_meta = parse_sdg_metadata_from_path(base_data_path)
 
-    env_to_id_map = {'noenv': 0, 'plane': 1, 'withenv': 2}
+    # exp0 = void background, exp1 = flat plane, exp2 = full 3D environment
+    env_to_id_map = {'noenv': 0, 'withoutenv': 0, 'plane': 1, 'withenv': 2}
     exp_id = env_to_id_map.get(sdg_meta['env'], 0)
 
     root_output_dir = Path("results")

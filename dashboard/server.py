@@ -236,17 +236,37 @@ def list_datasets():
 
 
 def list_results():
-    out = []
-    for base in [OD_DIR / "results", OD_DIR / "runs", OD_DIR / "yolo_runs_multi_mix",
+    """Find actual run folders at any depth (a run = a dir containing args.yaml,
+    results.csv or a final_run_config.yaml), newest first."""
+    found = {}
+
+    def add(d, label):
+        rel = str(d.relative_to(ROOT))
+        if rel not in found:
+            has_weights = any((d / "weights").glob("*.pt")) if (d / "weights").is_dir() else False
+            found[rel] = {
+                "name": label,
+                "modified": time.strftime("%Y-%m-%d %H:%M", time.localtime(d.stat().st_mtime)),
+                "mtime": d.stat().st_mtime,
+                "weights": has_weights,
+                "rel": rel,
+            }
+
+    od_results = OD_DIR / "results"
+    if od_results.exists():
+        for marker in ["args.yaml", "results.csv", "final_run_config.yaml"]:
+            for m in od_results.rglob(marker):
+                add(m.parent, f"OD_training/results/{m.parent.relative_to(od_results)}")
+    for base in [OD_DIR / "runs", OD_DIR / "yolo_runs_multi_mix",
                  ROOT / "active_learning" / "output", ROOT / "continual_learning" / "results"]:
         if base.exists():
-            for d in sorted(base.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            for d in base.iterdir():
                 if d.is_dir():
-                    out.append({
-                        "name": f"{base.parent.name}/{base.name}/{d.name}",
-                        "modified": time.strftime("%Y-%m-%d %H:%M", time.localtime(d.stat().st_mtime)),
-                        "rel": str(d.relative_to(ROOT)),
-                    })
+                    add(d, f"{base.parent.name}/{base.name}/{d.name}")
+
+    out = sorted(found.values(), key=lambda x: x["mtime"], reverse=True)
+    for o in out:
+        o.pop("mtime")
     return out
 
 

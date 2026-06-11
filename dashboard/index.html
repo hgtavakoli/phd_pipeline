@@ -168,7 +168,7 @@
       <h2 style="margin:0">Training / AL / CL results</h2>
       <button class="secondary" onclick="loadResults()">⟳ Refresh</button>
     </div>
-    <table id="resTable"><thead><tr><th>Run</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="resTable"><thead><tr><th>Run</th><th>Weights</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
     <p class="muted" style="margin-top:8px">“Open” launches Windows Explorer at the run folder (weights, curves, confusion matrices…).</p>
   </div>
 </div>
@@ -388,9 +388,9 @@ async function openPath(rel){ const r = await post('/api/open',{rel}); if(!r.ok)
 async function loadResults(){
   const list = await fetch('/api/results').then(r=>r.json());
   $('resTable').querySelector('tbody').innerHTML = list.map(d=>
-    `<tr><td>${d.name}</td><td>${d.modified}</td>
+    `<tr><td>${d.name}</td><td>${d.weights===true?'✔':d.weights===false?'<span style="color:var(--text2)">—</span>':''}</td><td>${d.modified}</td>
      <td><button class="secondary" onclick="openPath('${d.rel.replace(/\\/g,'\\\\')}')">Open</button></td></tr>`).join('')
-    || '<tr><td colspan="3" class="muted">No results yet — run a training.</td></tr>';
+    || '<tr><td colspan="4" class="muted">No results yet — run a training.</td></tr>';
 }
 
 // ---------- docs / aas ----------
