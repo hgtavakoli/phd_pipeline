@@ -139,7 +139,7 @@
       <div><label>Save every N epochs</label><input id="tSave" type="number" min="1" placeholder="AAS (10)" style="width:90px"></div>
       <button class="primary" id="btnRunTrain" onclick="runTrain()">▶ Run training</button>
     </div>
-    <p class="muted">Empty fields use the values stored in the selected AAS file; filled fields override them for this run only (the AAS file itself is not modified).
+    <p class="muted"><b>Record mode:</b> empty fields use the values stored in the selected AAS file; filled fields are <b>saved into the dataset's AAS file</b> (under <code>AAS\datasets\</code>) so it always documents your latest training parameters. Pipeline templates at the AAS root (v0.x, v2.0) are never modified — overrides there apply to the run only.
     Each selected camera trains as its own run — untick one to train on a single camera.
     Per-dataset AAS configs are created automatically after every generation (in <code>AAS\datasets\&lt;date&gt;\</code>).
     Tip: batch 32 may exceed the RTX 2080's 8 GB at img 640 with YOLOv12-L — use 8–16, or pass <code>-1</code> for auto-fit.</p>

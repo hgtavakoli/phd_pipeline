@@ -204,10 +204,12 @@ def build_train_cmd(p):
     safe = (AAS_DIR / aas).resolve()
     if not str(safe).startswith(str(AAS_DIR.resolve())) or not safe.exists():
         raise ValueError(f"AAS file not found: {safe}")
-    # Per-run overrides (cameras + training hyperparameters). The chosen AAS is
-    # copied to a temp file with the overrides applied, so originals stay
-    # untouched. img_size/batch_size idShorts also exist in the evaluation
-    # section and are updated consistently.
+    # Per-run overrides (cameras + training hyperparameters).
+    # RECORD MODE: if the chosen AAS is an SDG-generated dataset config
+    # (AAS/datasets/...), overrides are written INTO that file so it always
+    # documents the parameters of the latest training. Hand-maintained
+    # pipeline templates at the AAS root are never modified — for those the
+    # overrides go to a temp copy instead.
     overrides = {}
     if p.get("cameras"):
         overrides["cameras_to_train"] = ", ".join(p["cameras"])
@@ -219,9 +221,14 @@ def build_train_cmd(p):
     if overrides:
         data = json.loads(safe.read_text(encoding="utf-8-sig"))
         _aas_set_properties(data, overrides)
-        tmp = Path(tempfile.gettempdir()) / f"dashboard_run_{safe.stem}.json"
-        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
-        safe = tmp
+        is_dataset_aas = "datasets" in safe.relative_to(AAS_DIR).parts
+        if is_dataset_aas:
+            # persist: the dataset AAS is the canonical training record
+            safe.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        else:
+            tmp = Path(tempfile.gettempdir()) / f"dashboard_run_{safe.stem}.json"
+            tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+            safe = tmp
     python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
     if not python:
         raise ValueError("No training interpreter found — set TRAIN_PYTHON in dashboard/server.py "

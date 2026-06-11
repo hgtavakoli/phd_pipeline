@@ -57131,7 +57131,7 @@
         {
          "idShort": "cameras_to_train",
          "valueType": "xs:string",
-         "value": "Replicator, Replicator_01",
+         "value": "Replicator",
          "modelType": "Property"
         },
         {
@@ -57143,7 +57143,7 @@
         {
          "idShort": "epochs",
          "valueType": "xs:string",
-         "value": "1",
+         "value": "3",
          "modelType": "Property"
         },
         {
@@ -57155,7 +57155,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "32",
+         "value": "4",
          "modelType": "Property"
         },
         {
@@ -57180,7 +57180,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "32",
+         "value": "4",
          "modelType": "Property"
         },
         {
