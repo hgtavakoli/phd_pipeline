@@ -34,6 +34,9 @@ AAS_DIR = ROOT / "AAS"
 DOCS_DIR = ROOT / "docs"
 DATASETS = SMARTSDG / "Datasets" / "yolo_experiments"
 ISAAC_PYTHON = r"C:\Users\hota02\Documents\omniverse\python.bat"
+# Interpreter for training jobs (OD/AL/CL). Falls back to 'python' on PATH if
+# this conda env doesn't exist on the machine.
+TRAIN_PYTHON = r"C:\Users\hota02\AppData\Local\anaconda3\envs\yolov12\python.exe"
 
 PORT = 8765
 
@@ -130,9 +133,10 @@ def build_train_cmd(p):
     if not safe.exists():
         raise ValueError(f"AAS file not found: {safe}")
     import shutil
-    python = shutil.which("python")
+    python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
     if not python:
-        raise ValueError("No 'python' found on PATH — launch the dashboard from your activated training env (e.g. conda activate yolov12).")
+        raise ValueError("No training interpreter found — set TRAIN_PYTHON in dashboard/server.py "
+                         "or launch the dashboard from an activated env (e.g. conda activate yolov12).")
     return [python, "main.py", "--mode", "train", "--aas_file", str(safe)]
 
 
