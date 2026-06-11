@@ -30,8 +30,13 @@ SDG_v2/
 │   ├── HYPERPARAMETERS.md     ← every SDG knob explained (read before changing!)
 │   └── LEGACY_README_SmartSDG.md
 │
+├── dashboard/
+│   ├── server.py              ← local dashboard server (stdlib only)
+│   └── index.html             ← dashboard UI
+│
 ├── scripts/
-│   └── run_sdg.bat            ← interactive SDG launcher (validated defaults)
+│   ├── launch_dashboard.bat   ← start the dashboard (recommended entry point)
+│   └── run_sdg.bat            ← interactive CLI launcher (validated defaults)
 │
 ├── SmartSDG/                  ← STAGE 1-2: generation + YOLO conversion
 │   ├── main.py                ← entry point (all CLI flags documented in --help)
@@ -56,6 +61,25 @@ SDG_v2/
 ---
 
 ## Quick start
+
+### Dashboard (recommended)
+
+```bat
+:: activate your training env first so the Training tab uses it, e.g.:
+::   conda activate yolov12
+scripts\launch_dashboard.bat
+```
+
+Opens http://127.0.0.1:8765 — a local control panel (Python stdlib only, no
+extra dependencies) with:
+- **Run** — form-based SDG generation (validated defaults pre-filled, live
+  command preview) and one-click OD training from any AAS config
+- **Live Console** — real-time streaming of the running job's output, with a
+  Stop button
+- **Datasets** — browse generated datasets, thumbnail previews, open in Explorer
+- **Results** — all training/AL/CL run folders, one click to open
+- **Docs & Commands** — README/HYPERPARAMETERS/CHANGELOG viewer + copy-paste
+  command reference
 
 ### Generate a dataset (Isaac Sim required)
 

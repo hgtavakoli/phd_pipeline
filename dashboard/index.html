@@ -1,0 +1,322 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>SmartSDG Pipeline v2 — Dashboard</title>
+<style>
+  :root{
+    --bg:#0d1017; --panel:#151a23; --panel2:#1a212e; --border:#2a3344;
+    --text:#e6e9ef; --text2:#9aa4b5; --accent:#76b900; --accent2:#4da3ff;
+    --red:#ff5d5d; --yellow:#ffc857;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font:14px/1.5 'Segoe UI',system-ui,sans-serif;min-height:100vh}
+  header{display:flex;align-items:center;gap:14px;padding:14px 24px;background:var(--panel);border-bottom:1px solid var(--border)}
+  header h1{font-size:1.1rem}
+  header .ver{color:var(--accent);font-size:.8rem;border:1px solid var(--accent);border-radius:10px;padding:1px 8px}
+  #statusBadge{margin-left:auto;font-size:.85rem;padding:4px 12px;border-radius:14px;background:var(--panel2);border:1px solid var(--border)}
+  #statusBadge.run{border-color:var(--yellow);color:var(--yellow)}
+  #statusBadge.ok{border-color:var(--accent);color:var(--accent)}
+  #statusBadge.err{border-color:var(--red);color:var(--red)}
+  nav{display:flex;gap:4px;padding:10px 24px 0;background:var(--panel);border-bottom:1px solid var(--border)}
+  nav button{background:none;border:none;color:var(--text2);padding:9px 16px;cursor:pointer;font-size:.92rem;border-bottom:2px solid transparent}
+  nav button.active{color:var(--text);border-bottom-color:var(--accent)}
+  main{padding:20px 24px;max-width:1200px;margin:0 auto}
+  .tab{display:none}.tab.show{display:block}
+  h2{font-size:1rem;color:var(--accent);margin:18px 0 10px}
+  h3{font-size:.9rem;color:var(--text2);margin:12px 0 8px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
+  label{display:block;font-size:.8rem;color:var(--text2);margin-bottom:3px}
+  select,input[type=number],input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:.88rem}
+  .row{display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin-bottom:12px}
+  .chips{display:flex;flex-wrap:wrap;gap:6px}
+  .chips label{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.82rem;color:var(--text);cursor:pointer;margin:0}
+  button.primary{background:var(--accent);color:#000;border:none;border-radius:7px;padding:9px 20px;font-weight:600;cursor:pointer;font-size:.9rem}
+  button.secondary{background:none;color:var(--accent2);border:1px solid var(--accent2);border-radius:7px;padding:8px 16px;cursor:pointer;font-size:.85rem}
+  button.danger{background:none;color:var(--red);border:1px solid var(--red);border-radius:7px;padding:8px 16px;cursor:pointer;font-size:.85rem}
+  button:disabled{opacity:.4;cursor:not-allowed}
+  pre,#console{background:#0a0d12;border:1px solid var(--border);border-radius:8px;padding:12px;font:12px/1.45 Consolas,monospace;overflow:auto;white-space:pre-wrap;word-break:break-all}
+  #console{height:420px}
+  table{width:100%;border-collapse:collapse;font-size:.85rem}
+  th,td{text-align:left;padding:7px 10px;border-bottom:1px solid var(--border)}
+  th{color:var(--text2);font-weight:500}
+  .thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .thumbs img{height:110px;border-radius:6px;border:1px solid var(--border)}
+  .muted{color:var(--text2);font-size:.8rem}
+  .cmdline{color:var(--accent);font-family:Consolas,monospace;font-size:.78rem;background:#0a0d12;border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:8px;white-space:pre-wrap;word-break:break-all}
+  #docText{max-height:600px}
+  .doclist button{margin:0 6px 6px 0}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>🧪 SmartSDG Pipeline</h1><span class="ver" id="verChip">v2</span>
+  <span id="statusBadge">idle</span>
+</header>
+
+<nav>
+  <button data-tab="run" class="active" onclick="showTab('run')">🚀 Run</button>
+  <button data-tab="console" onclick="showTab('console')">📟 Live Console</button>
+  <button data-tab="datasets" onclick="showTab('datasets')">🖼 Datasets</button>
+  <button data-tab="results" onclick="showTab('results')">🏋 Results</button>
+  <button data-tab="docs" onclick="showTab('docs')">📚 Docs &amp; Commands</button>
+</nav>
+
+<main>
+
+<!-- ============ RUN ============ -->
+<div class="tab show" id="tab-run">
+  <div class="card">
+    <h2>Synthetic Data Generation</h2>
+    <div class="row">
+      <div><label>Components</label>
+        <span class="muted"><a href="#" onclick="setAll(true);return false">all</a> · <a href="#" onclick="setAll(false);return false">none</a></span>
+        <div class="chips" id="comps"></div>
+      </div>
+    </div>
+    <div class="row">
+      <div><label>Mode</label>
+        <select id="fMode"><option value="multi" selected>multi-object</option><option value="single">single-object (one run, first checked)</option></select></div>
+      <div><label>Light</label>
+        <select id="fLight"><option>Low</option><option selected>Medium</option><option>High</option></select></div>
+      <div><label>Images</label><input id="fSamples" type="number" value="100" min="1" style="width:80px"></div>
+      <div><label>Environment</label>
+        <select id="fEnv"><option selected>plane</option><option value="true">true (3D scene)</option><option value="false">false (void)</option></select></div>
+      <div><label>Resolution</label>
+        <select id="fRes">
+          <option value="128x80">128×80 (fast test)</option>
+          <option value="640x480" selected>640×480 (recommended)</option>
+          <option value="1280x800">1280×800</option>
+          <option value="1920x1080">1920×1080</option>
+        </select></div>
+      <div><label>Seed (optional)</label><input id="fSeed" type="number" placeholder="random" style="width:90px"></div>
+    </div>
+    <div class="row">
+      <div><label>Min visibility</label>
+        <select id="fVis"><option value="0">off</option><option value="0.5">≥50%</option><option value="0.75">≥75%</option><option value="0.95" selected>≥95%</option></select></div>
+      <div><label>Spawn radius (m)</label><input id="fSpawn" type="number" step="0.05" value="0.2" style="width:80px"></div>
+      <div><label>Min separation (m)</label><input id="fSep" type="number" step="0.01" value="0.05" style="width:80px"></div>
+      <div><label>IoU overlap filter</label><input id="fIou" type="number" step="0.05" value="0.7" style="width:80px"></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fTrunc" type="checkbox" checked> drop border-cut frames</label></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fOvl" type="checkbox" checked> overlap filter</label></div>
+    </div>
+    <div class="cmdline" id="sdgCmdPreview"></div>
+    <div class="row" style="margin-top:12px">
+      <button class="primary" id="btnRunSdg" onclick="runSdg()">▶ Run generation</button>
+      <span class="muted">Output: SmartSDG\Datasets\yolo_experiments\ — every run ends with a FINAL DATASET SUMMARY in the console.</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>Object Detection Training</h2>
+    <div class="row">
+      <div><label>AAS config</label><select id="fAas" style="min-width:320px"></select></div>
+      <button class="primary" id="btnRunTrain" onclick="runTrain()">▶ Run training</button>
+      <span class="muted">Runs OD_training\main.py with the selected AAS file (uses your active Python env — activate yolov12 before launching the dashboard).</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ CONSOLE ============ -->
+<div class="tab" id="tab-console">
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">Live output — <span id="jobName" class="muted">no job</span></h2>
+      <button class="danger" id="btnStop" onclick="stopJob()" disabled>■ Stop job</button>
+      <label class="chips" style="display:inline-flex"><input id="autoScroll" type="checkbox" checked> auto-scroll</label>
+    </div>
+    <div id="console"></div>
+  </div>
+</div>
+
+<!-- ============ DATASETS ============ -->
+<div class="tab" id="tab-datasets">
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">Generated datasets</h2>
+      <button class="secondary" onclick="loadDatasets()">⟳ Refresh</button>
+    </div>
+    <table id="dsTable"><thead><tr><th>Dataset</th><th>Images</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
+    <div id="previewArea"></div>
+  </div>
+</div>
+
+<!-- ============ RESULTS ============ -->
+<div class="tab" id="tab-results">
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">Training / AL / CL results</h2>
+      <button class="secondary" onclick="loadResults()">⟳ Refresh</button>
+    </div>
+    <table id="resTable"><thead><tr><th>Run</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
+    <p class="muted" style="margin-top:8px">“Open” launches Windows Explorer at the run folder (weights, curves, confusion matrices…).</p>
+  </div>
+</div>
+
+<!-- ============ DOCS ============ -->
+<div class="tab" id="tab-docs">
+  <div class="card">
+    <h2>Project documentation</h2>
+    <div class="doclist">
+      <button class="secondary" onclick="loadDoc('README.md')">README</button>
+      <button class="secondary" onclick="loadDoc('HYPERPARAMETERS.md')">Hyperparameters</button>
+      <button class="secondary" onclick="loadDoc('INSTALL.md')">Install</button>
+      <button class="secondary" onclick="loadDoc('PIPELINE.md')">Pipeline</button>
+      <button class="secondary" onclick="loadDoc('CHANGELOG.md')">Changelog</button>
+    </div>
+    <pre id="docText">Pick a document above.</pre>
+  </div>
+  <div class="card">
+    <h2>Command reference (copy-paste)</h2>
+    <h3>SDG generation (validated defaults baked in — only switches needed)</h3>
+    <pre>cd C:\Users\hota02\Documents\SDG_v2\SmartSDG
+C:\Users\hota02\Documents\omniverse\python.bat main.py --multi_object --components Cabin,GlueGun,BLid ^
+  --light_mode Medium --num_samples 100 --load_env plane --width 640 --height 480 ^
+  --convert_to_yolo --filter_overlaps --drop_truncated</pre>
+    <h3>OD training</h3>
+    <pre>cd C:\Users\hota02\Documents\SDG_v2\OD_training
+python main.py --mode train --aas_file "..\AAS\CA_Modul-OD_pipeline_v0.5.json"</pre>
+    <h3>Active learning / Continual learning / Inference</h3>
+    <pre>cd ..\active_learning    &amp;&amp; python main_yolo.py
+cd ..\continual_learning &amp;&amp; python run_from_aas.py "..\AAS\CA_Modul-OD_pipeline_v0.7.json"
+cd ..\inference          &amp;&amp; python run_inference.py --model weights\best.pt --source 0 --conf 0.3</pre>
+    <h3>Git workflow</h3>
+    <pre>git add -A
+git commit -m "describe the change (log hyperparameter changes in CHANGELOG.md!)"
+git push</pre>
+  </div>
+</div>
+
+</main>
+
+<script>
+const COMPONENTS = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassis","Rchassis","BlackCabin"];
+const $ = id => document.getElementById(id);
+
+// ---------- tabs ----------
+function showTab(name){
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('show'));
+  document.querySelectorAll('nav button').forEach(b=>b.classList.remove('active'));
+  $('tab-'+name).classList.add('show');
+  document.querySelector(`nav button[data-tab=${name}]`).classList.add('active');
+  if(name==='datasets') loadDatasets();
+  if(name==='results') loadResults();
+}
+
+// ---------- component chips ----------
+$('comps').innerHTML = COMPONENTS.map(c=>
+  `<label><input type="checkbox" class="comp" value="${c}" ${c==='GlueGun'?'checked':''} onchange="updatePreview()"> ${c}</label>`).join('');
+function setAll(v){document.querySelectorAll('.comp').forEach(c=>c.checked=v);updatePreview();}
+const selectedComps = ()=>[...document.querySelectorAll('.comp:checked')].map(c=>c.value);
+
+// ---------- form -> payload + preview ----------
+function sdgPayload(){
+  const [w,h] = $('fRes').value.split('x').map(Number);
+  return {
+    mode: $('fMode').value, components: selectedComps(),
+    light: $('fLight').value, samples: +$('fSamples').value,
+    env: $('fEnv').value, width: w, height: h,
+    min_visibility: +$('fVis').value,
+    spawn_radius: +$('fSpawn').value, min_separation: +$('fSep').value,
+    iou_threshold: +$('fIou').value,
+    drop_truncated: $('fTrunc').checked, filter_overlaps: $('fOvl').checked,
+    seed: $('fSeed').value ? +$('fSeed').value : null,
+  };
+}
+function updatePreview(){
+  const p = sdgPayload();
+  let c = `python.bat main.py --light_mode ${p.light} --num_samples ${p.samples} --load_env ${p.env} --width ${p.width} --height ${p.height} --convert_to_yolo`;
+  if(p.mode==='multi'){ c += ' --multi_object'; if(p.components.length && p.components.length<COMPONENTS.length) c += ` --components ${p.components.join(',')}`;
+    c += ` --spawn_radius ${p.spawn_radius} --min_separation ${p.min_separation}`; }
+  else c += ` --component_class ${p.components[0]||'GlueGun'}`;
+  if(p.min_visibility>0) c += ` --min_visibility ${p.min_visibility}`;
+  if(p.drop_truncated) c += ' --drop_truncated';
+  if(p.filter_overlaps) c += ` --filter_overlaps --iou_threshold ${p.iou_threshold}`;
+  if(p.seed) c += ` --seed ${p.seed}`;
+  $('sdgCmdPreview').textContent = c;
+}
+document.querySelectorAll('#tab-run select, #tab-run input').forEach(el=>el.addEventListener('input',updatePreview));
+updatePreview();
+
+// ---------- run / stop ----------
+async function post(url, body){const r = await fetch(url,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body||{})});return r.json();}
+async function runSdg(){
+  const p = sdgPayload();
+  if(!p.components.length){alert('Select at least one component');return;}
+  const r = await post('/api/run_sdg', p);
+  if(!r.ok){alert(r.error);return;}
+  startConsole('SDG generation');
+}
+async function runTrain(){
+  const r = await post('/api/run_train', {aas_file: $('fAas').value});
+  if(!r.ok){alert(r.error);return;}
+  startConsole('OD training');
+}
+async function stopJob(){ if(confirm('Stop the running job?')) await post('/api/stop'); }
+
+// ---------- live console ----------
+let logOffset = 0, polling = null;
+function startConsole(name){
+  $('jobName').textContent = name;
+  $('console').textContent = '';
+  logOffset = 0;
+  showTab('console');
+  if(!polling) polling = setInterval(pollLogs, 1000);
+}
+async function pollLogs(){
+  try{
+    const r = await fetch(`/api/logs?since=${logOffset}`).then(x=>x.json());
+    if(r.lines.length){
+      $('console').textContent += r.lines.join('\n') + '\n';
+      logOffset = r.next;
+      if($('autoScroll').checked) $('console').scrollTop = $('console').scrollHeight;
+    }
+  }catch(e){}
+}
+async function pollStatus(){
+  try{
+    const s = await fetch('/api/status').then(x=>x.json());
+    const b = $('statusBadge');
+    $('btnStop').disabled = !s.running;
+    $('btnRunSdg').disabled = s.running; $('btnRunTrain').disabled = s.running;
+    if(s.running){ b.textContent = `⏳ ${s.name} — ${Math.floor(s.elapsed/60)}m ${s.elapsed%60}s`; b.className='run'; if(!polling) polling=setInterval(pollLogs,1000);}
+    else if(s.name){ b.textContent = s.returncode===0 ? `✔ ${s.name} finished` : `✖ ${s.name} exited (${s.returncode})`; b.className = s.returncode===0?'ok':'err'; }
+    else { b.textContent='idle'; b.className=''; }
+  }catch(e){ $('statusBadge').textContent='server offline'; $('statusBadge').className='err'; }
+}
+setInterval(pollStatus, 1500); pollStatus();
+
+// ---------- datasets ----------
+async function loadDatasets(){
+  const list = await fetch('/api/datasets').then(r=>r.json());
+  $('dsTable').querySelector('tbody').innerHTML = list.map(d=>
+    `<tr><td>${d.name}</td><td>${d.images}</td><td>${d.modified}</td>
+     <td><button class="secondary" onclick="preview('${d.rel.replace(/\\/g,'\\\\')}','${d.name}')">Preview</button>
+         <button class="secondary" onclick="openPath('${d.rel.replace(/\\/g,'\\\\')}')">Open folder</button></td></tr>`).join('')
+    || '<tr><td colspan="4" class="muted">No datasets yet — run a generation.</td></tr>';
+}
+async function preview(rel,name){
+  const imgs = await fetch('/api/preview?rel='+encodeURIComponent(rel)).then(r=>r.json());
+  $('previewArea').innerHTML = `<h3>Preview — ${name}</h3><div class="thumbs">`+
+    imgs.map(p=>`<img src="/img?p=${encodeURIComponent(p)}" title="${p}">`).join('')+`</div>`;
+}
+async function openPath(rel){ const r = await post('/api/open',{rel}); if(!r.ok) alert(r.error); }
+
+// ---------- results ----------
+async function loadResults(){
+  const list = await fetch('/api/results').then(r=>r.json());
+  $('resTable').querySelector('tbody').innerHTML = list.map(d=>
+    `<tr><td>${d.name}</td><td>${d.modified}</td>
+     <td><button class="secondary" onclick="openPath('${d.rel.replace(/\\/g,'\\\\')}')">Open</button></td></tr>`).join('')
+    || '<tr><td colspan="3" class="muted">No results yet — run a training.</td></tr>';
+}
+
+// ---------- docs / aas ----------
+async function loadDoc(f){ $('docText').textContent = await fetch('/api/doc?f='+f).then(r=>r.text()); }
+fetch('/api/aas').then(r=>r.json()).then(files=>{
+  $('fAas').innerHTML = files.map(f=>`<option ${f.includes('v0.5')?'selected':''}>${f}</option>`).join('');});
+fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').textContent='v'+v.trim());
+</script>
+</body>
+</html>
