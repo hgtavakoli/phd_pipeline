@@ -91,6 +91,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="Multi-object: minimum XY distance (m) between object centers\n"
                              "(collision-aware placement, prevents occlusion). 0 disables.")
 
+    # --- Renderer / ray-casting quality (Group 3 hyperparameters) -------------
+    # Defaults come from config.yaml SIMULATION_CONFIG; these flags override per run.
+    parser.add_argument("--renderer", type=str, default=None, choices=["PathTracing", "RayTracedLighting"],
+                        help="Render backend. PathTracing = accurate (default), RayTracedLighting = fast.")
+    parser.add_argument("--spp", type=int, default=None,
+                        help="Samples (rays) per pixel per frame — main quality/speed knob.\n"
+                             "8 = fast iteration (denoiser compensates), 32-64 = final datasets.")
+    parser.add_argument("--max_bounces", type=int, default=None,
+                        help="Maximum light-path bounces.")
+    parser.add_argument("--denoiser", type=str, default=None, choices=["on", "off"],
+                        help="OptiX AI denoiser. Keep 'on' when using low --spp.")
+
     # --- Output resolution ----------------------------------------------------
     parser.add_argument("--width", type=int, default=None,
                         help="Image width in px (overrides config camera img_width).")
@@ -146,6 +158,18 @@ def apply_cli_overrides(args: argparse.Namespace, config) -> None:
         config.SIMULATION_CONFIG.height = args.height
     print(f"Render resolution: {config.generation_params.camera.img_width}"
           f"x{config.generation_params.camera.img_height}")
+
+    sim = config.SIMULATION_CONFIG
+    if args.renderer:
+        sim.renderer = args.renderer
+    if args.spp:
+        sim.samples_per_pixel_per_frame = args.spp
+    if args.max_bounces:
+        sim.max_bounces = args.max_bounces
+    if args.denoiser is not None:
+        sim.denoiser = sim.use_denoiser = (args.denoiser == "on")
+    print(f"Renderer: {sim.renderer} | spp: {sim.samples_per_pixel_per_frame} | "
+          f"max_bounces: {sim.max_bounces} | denoiser: {'on' if sim.denoiser else 'off'}")
 
 
 def validate_component_selection(args: argparse.Namespace, config) -> None:

@@ -17,7 +17,9 @@ Serves on http://127.0.0.1:8765 — localhost only, single user, one job at a ti
 import json
 import mimetypes
 import os
+import shutil
 import subprocess
+import tempfile
 import threading
 import time
 import urllib.parse
@@ -33,6 +35,9 @@ OD_DIR = ROOT / "OD_training"
 AAS_DIR = ROOT / "AAS"
 DOCS_DIR = ROOT / "docs"
 DATASETS = SMARTSDG / "Datasets" / "yolo_experiments"
+RAW_OUTPUT = SMARTSDG / "Datasets" / "unified_render_output"
+# Template AAS cloned for per-dataset training configs (must parse without BOM).
+TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v2.0.json"
 ISAAC_PYTHON = r"C:\Users\hota02\Documents\omniverse\python.bat"
 # Interpreter for training jobs (OD/AL/CL). Falls back to 'python' on PATH if
 # this conda env doesn't exist on the machine.
@@ -54,9 +59,20 @@ def _reader(job):
     proc.wait()
     job["returncode"] = proc.returncode
     job["lines"].append(f"--- process exited with code {proc.returncode} ---")
+    # After a successful generation, record the dataset in its own AAS file so
+    # training can target it directly (reproducibility: dataset + training
+    # config travel together).
+    if proc.returncode == 0 and job["name"].startswith("SDG"):
+        try:
+            datasets = list_datasets()
+            if datasets:
+                aas_name = generate_dataset_aas(datasets[0]["rel"], job.get("meta") or {})
+                job["lines"].append(f"--- AAS training config created/updated: AAS\\{aas_name} ---")
+        except Exception as e:
+            job["lines"].append(f"--- could not create dataset AAS: {e} ---")
 
 
-def start_job(name, cmd, cwd):
+def start_job(name, cmd, cwd, meta=None):
     """Start a subprocess job unless one is already running."""
     global _job
     with _job_lock:
@@ -76,6 +92,7 @@ def start_job(name, cmd, cwd):
                       f"(interpreter on PATH: {__import__('shutil').which('python') or 'none'})", ""],
             "started": time.time(),
             "returncode": None,
+            "meta": meta,
         }
         threading.Thread(target=_reader, args=(_job,), daemon=True).start()
         return True, ""
@@ -90,6 +107,41 @@ def stop_job():
             _job["lines"].append("--- job stopped by user ---")
             return True
         return False
+
+
+# --- AAS helpers ------------------------------------------------------------------
+
+def _aas_set_properties(node, targets):
+    """Recursively set AAS Property values by idShort."""
+    if isinstance(node, dict):
+        if node.get("modelType") == "Property" and node.get("idShort") in targets:
+            node["value"] = str(targets[node["idShort"]])
+        for v in node.values():
+            _aas_set_properties(v, targets)
+    elif isinstance(node, list):
+        for v in node:
+            _aas_set_properties(v, targets)
+
+
+def generate_dataset_aas(dataset_rel, meta=None):
+    """Clone the template AAS for a specific dataset: points base_data_dir at it,
+    sets the camera folders, and names the experiment after the dataset.
+    Class names stay the full global 9-class list — label files use global IDs."""
+    d = _safe_path(dataset_rel)
+    if not d.is_dir():
+        raise ValueError(f"dataset not found: {d}")
+    data = json.loads(TEMPLATE_AAS.read_text(encoding="utf-8-sig"))
+    cameras = sorted({p.parent.name if p.parent != d else "" for p in d.rglob("*.png")} - {""}) \
+              or ["Replicator", "Replicator_01"]
+    _aas_set_properties(data, {
+        "base_data_dir": str(d) + "\\",
+        "cameras_to_train": ", ".join(cameras),
+        "exp_names_to_train": d.name,
+    })
+    out = AAS_DIR / f"CA_Modul-OD_dataset_{d.name}.json"
+    # NOTE: must be written WITHOUT a UTF-8 BOM — aas_core3 rejects BOMs.
+    out.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    return out.name
 
 
 # --- Command builders -----------------------------------------------------------
@@ -124,6 +176,15 @@ def build_sdg_cmd(p):
         cmd += ["--filter_overlaps", "--iou_threshold", str(p.get("iou_threshold", 0.7))]
     if p.get("seed"):
         cmd += ["--seed", str(int(p["seed"]))]
+    # Renderer hyperparameters (only sent when user overrides the config defaults)
+    if p.get("renderer"):
+        cmd += ["--renderer", p["renderer"]]
+    if p.get("spp"):
+        cmd += ["--spp", str(int(p["spp"]))]
+    if p.get("max_bounces"):
+        cmd += ["--max_bounces", str(int(p["max_bounces"]))]
+    if p.get("denoiser") in ("on", "off"):
+        cmd += ["--denoiser", p["denoiser"]]
     return cmd
 
 
@@ -132,7 +193,16 @@ def build_train_cmd(p):
     safe = (AAS_DIR / Path(aas).name)
     if not safe.exists():
         raise ValueError(f"AAS file not found: {safe}")
-    import shutil
+    # Optional camera subset: train on camera 1, camera 2, or both. The chosen
+    # AAS is copied to a temp file with cameras_to_train overridden, so the
+    # original config stays untouched.
+    cameras = p.get("cameras")
+    if cameras:
+        data = json.loads(safe.read_text(encoding="utf-8-sig"))
+        _aas_set_properties(data, {"cameras_to_train": ", ".join(cameras)})
+        tmp = Path(tempfile.gettempdir()) / f"dashboard_run_{safe.stem}.json"
+        tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+        safe = tmp
     python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
     if not python:
         raise ValueError("No training interpreter found — set TRAIN_PYTHON in dashboard/server.py "
@@ -264,6 +334,22 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error(404)
             return
 
+        if route == "/api/label":
+            # YOLO label file for an image path (same basename, .txt)
+            try:
+                p = _safe_path(q["p"][0]).with_suffix(".txt")
+                txt = p.read_text(encoding="utf-8") if p.exists() else ""
+                body = txt.encode("utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/plain; charset=utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+                return
+            except Exception:
+                self.send_error(404)
+                return
+
         if route == "/img":
             try:
                 p = _safe_path(q["p"][0])
@@ -288,8 +374,36 @@ class Handler(BaseHTTPRequestHandler):
                 cmd = build_sdg_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job("SDG generation", cmd, SMARTSDG)
+            ok, err = start_job("SDG generation", cmd, SMARTSDG, meta=payload)
             return self._json({"ok": ok, "error": err})
+
+        if route == "/api/delete_dataset":
+            # Deletes the converted dataset AND its raw render folder. Only
+            # paths inside the two dataset directories are accepted.
+            try:
+                p = _safe_path(payload.get("rel", ""))
+                if not (str(p.parent) == str(DATASETS) and p.is_dir()):
+                    raise ValueError("only datasets inside yolo_experiments can be deleted")
+                shutil.rmtree(p)
+                removed = [str(p.relative_to(ROOT))]
+                raw = RAW_OUTPUT / p.name
+                if raw.is_dir():
+                    shutil.rmtree(raw)
+                    removed.append(str(raw.relative_to(ROOT)))
+                aas = AAS_DIR / f"CA_Modul-OD_dataset_{p.name}.json"
+                if aas.exists():
+                    aas.unlink()
+                    removed.append(str(aas.relative_to(ROOT)))
+                return self._json({"ok": True, "removed": removed})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+
+        if route == "/api/make_aas":
+            try:
+                name = generate_dataset_aas(payload.get("rel", ""))
+                return self._json({"ok": True, "aas": name})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
 
         if route == "/api/run_train":
             try:

@@ -57100,7 +57100,7 @@
                 {
                   "idShort": "names",
                   "valueType": "xs:string",
-                  "value": "Ylid, YTrailer, Cabin, Ggun,BLid, BTrailer, FChassis, Rchassis",
+                  "value": "Ylid, YTrailer, Cabin, GlueGun, BLid, BTrailer, FChassis, Rchassis, BlackCabin",
                   "modelType": "Property"
                 }
               ],
