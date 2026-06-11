@@ -371,6 +371,16 @@ class Handler(BaseHTTPRequestHandler):
             files = [str(f.relative_to(AAS_DIR)).replace("\\", "/") for f in ds] + top
             return self._json(files)
 
+        if route == "/api/components":
+            # Component/class list read live from SmartSDG config.yaml —
+            # COMPONENT_USD_MAP order defines the global YOLO class IDs.
+            try:
+                import yaml
+                cfg = yaml.safe_load((SMARTSDG / "src" / "config" / "config.yaml").read_text(encoding="utf-8"))
+                return self._json(list(cfg["COMPONENT_USD_MAP"].keys()))
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
+
         if route == "/api/weights":
             # Pretrained/base weights available in OD_training (for the dropdown)
             pts = sorted(f.name for f in OD_DIR.glob("*.pt"))

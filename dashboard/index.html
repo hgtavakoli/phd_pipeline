@@ -220,7 +220,9 @@ git push</pre>
 </main>
 
 <script>
-const COMPONENTS = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassis","Rchassis","BlackCabin"];
+// Fallback only — the live list is fetched from SmartSDG config.yaml
+// (COMPONENT_USD_MAP order = global YOLO class IDs).
+let COMPONENTS = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassis","Rchassis","BlackCabin"];
 const $ = id => document.getElementById(id);
 
 // ---------- tabs ----------
@@ -234,8 +236,14 @@ function showTab(name){
 }
 
 // ---------- component chips ----------
-$('comps').innerHTML = COMPONENTS.map(c=>
-  `<label><input type="checkbox" class="comp" value="${c}" ${c==='GlueGun'?'checked':''} onchange="updatePreview()"> ${c}</label>`).join('');
+function buildChips(){
+  $('comps').innerHTML = COMPONENTS.map(c=>
+    `<label><input type="checkbox" class="comp" value="${c}" ${c==='GlueGun'?'checked':''} onchange="updatePreview()"> ${c}</label>`).join('');
+}
+buildChips();
+fetch('/api/components').then(r=>r.json()).then(list=>{
+  if(Array.isArray(list) && list.length){ COMPONENTS = list; buildChips(); updatePreview(); }
+});
 function setAll(v){document.querySelectorAll('.comp').forEach(c=>c.checked=v);updatePreview();}
 const selectedComps = ()=>[...document.querySelectorAll('.comp:checked')].map(c=>c.value);
 
@@ -363,15 +371,14 @@ async function makeAas(rel){
   loadAasList();
 }
 
-// Class colors (global IDs 0-8)
-const CLS_COLORS = ['#ffd400','#ff8c00','#4da3ff','#76b900','#ff5d5d','#b07cff','#00d0c0','#ff7ab8','#cccccc'];
-const CLS_NAMES  = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassis","Rchassis","BlackCabin"];
+// Class colors (global IDs follow COMPONENTS order from config.yaml)
+const CLS_COLORS = ['#ffd400','#ff8c00','#4da3ff','#76b900','#ff5d5d','#b07cff','#00d0c0','#ff7ab8','#cccccc','#8fd14f','#f29e4c'];
 
 async function preview(rel,name){
   const imgs = await fetch('/api/preview?rel='+encodeURIComponent(rel)).then(r=>r.json());
   $('previewArea').innerHTML = `<h3>Preview — ${name}</h3><div class="thumbs" id="thumbBox"></div>
     <div class="muted" id="legend"></div>`;
-  $('legend').innerHTML = CLS_NAMES.map((n,i)=>`<span style="color:${CLS_COLORS[i]}">■ ${n}</span>`).join(' &nbsp; ');
+  $('legend').innerHTML = COMPONENTS.map((n,i)=>`<span style="color:${CLS_COLORS[i%CLS_COLORS.length]}">■ ${n}</span>`).join(' &nbsp; ');
   for(const p of imgs){
     if($('showBoxes').checked) await drawThumb(p);
     else $('thumbBox').insertAdjacentHTML('beforeend', `<img src="/img?p=${encodeURIComponent(p)}" title="${p}">`);
@@ -395,9 +402,9 @@ async function drawThumb(p){
     if(v.length<5||isNaN(v[0])) continue;
     const [c,cx,cy,w,h] = v;
     const x=(cx-w/2)*cv.width, y=(cy-h/2)*cv.height, bw=w*cv.width, bh=h*cv.height;
-    ctx.strokeStyle = CLS_COLORS[c%9]; ctx.fillStyle = CLS_COLORS[c%9];
+    ctx.strokeStyle = CLS_COLORS[c%CLS_COLORS.length]; ctx.fillStyle = CLS_COLORS[c%CLS_COLORS.length];
     ctx.strokeRect(x,y,bw,bh);
-    ctx.fillText(CLS_NAMES[c]||c, x+1, y>10?y-2:y+9);
+    ctx.fillText(COMPONENTS[c]||c, x+1, y>10?y-2:y+9);
   }
   $('thumbBox').appendChild(cv);
 }

@@ -57063,7 +57063,7 @@
         {
          "idShort": "base_data_dir",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\SmartSDG\\Datasets\\yolo_experiments\\MULTI_GlueGun-BLid-BTrailer_Medium_withenv\\",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\SmartSDG\\Datasets\\yolo_experiments\\MULTI_GlueGun-BLid_Medium_withoutenv\\",
          "modelType": "Property"
         },
         {
@@ -57119,7 +57119,7 @@
         {
          "idShort": "exp_names_to_train",
          "valueType": "xs:string",
-         "value": "MULTI_GlueGun-BLid-BTrailer_Medium_withenv",
+         "value": "MULTI_GlueGun-BLid_Medium_withoutenv",
          "modelType": "Property"
         },
         {
@@ -57131,7 +57131,7 @@
         {
          "idShort": "cameras_to_train",
          "valueType": "xs:string",
-         "value": "Replicator",
+         "value": "Replicator, Replicator_01",
          "modelType": "Property"
         },
         {
@@ -57155,7 +57155,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "4",
+         "value": "32",
          "modelType": "Property"
         },
         {
@@ -57180,7 +57180,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "4",
+         "value": "32",
          "modelType": "Property"
         },
         {
