@@ -69,7 +69,8 @@ def start_job(name, cmd, cwd):
             "name": name,
             "cmd_str": subprocess.list2cmdline(cmd),
             "proc": proc,
-            "lines": [f"$ {subprocess.list2cmdline(cmd)}", f"(cwd: {cwd})", ""],
+            "lines": [f"$ {subprocess.list2cmdline(cmd)}", f"(cwd: {cwd})",
+                      f"(interpreter on PATH: {__import__('shutil').which('python') or 'none'})", ""],
             "started": time.time(),
             "returncode": None,
         }
@@ -128,7 +129,11 @@ def build_train_cmd(p):
     safe = (AAS_DIR / Path(aas).name)
     if not safe.exists():
         raise ValueError(f"AAS file not found: {safe}")
-    return ["python", "main.py", "--mode", "train", "--aas_file", str(safe)]
+    import shutil
+    python = shutil.which("python")
+    if not python:
+        raise ValueError("No 'python' found on PATH — launch the dashboard from your activated training env (e.g. conda activate yolov12).")
+    return [python, "main.py", "--mode", "train", "--aas_file", str(safe)]
 
 
 # --- Filesystem helpers -----------------------------------------------------------
