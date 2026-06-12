@@ -71,7 +71,8 @@
     <h2>Synthetic Data Generation</h2>
     <div class="row">
       <div><label>Class source (AAS file — edit it to add/change components)</label>
-        <select id="fClassAas" onchange="loadComponents()" style="min-width:320px"></select></div>
+        <select id="fClassAas" onchange="loadComponents()" style="min-width:320px"></select>
+        <button class="secondary" style="padding:5px 10px" title="Re-read AAS files and update the class list (picks up edited JSONs and new USD files)" onclick="loadClassAasList()">⟳</button></div>
     </div>
     <div class="row">
       <div><label>Components</label>
@@ -129,7 +130,8 @@
   <div class="card">
     <h2>Object Detection Training</h2>
     <div class="row">
-      <div><label>AAS config</label><select id="fAas" style="min-width:320px"></select></div>
+      <div><label>AAS config</label><select id="fAas" style="min-width:320px"></select>
+        <button class="secondary" style="padding:5px 10px" title="Refresh the AAS config list" onclick="loadAasList()">⟳</button></div>
       <div><label>Cameras</label>
         <span class="chips">
           <label><input type="checkbox" id="cam1" checked> Replicator (top-down)</label>
@@ -149,6 +151,15 @@
     Each selected camera trains as its own run — untick one to train on a single camera.
     Per-dataset AAS configs are created automatically after every generation (in <code>AAS\datasets\&lt;date&gt;\</code>).
     Tip: batch 32 may exceed the RTX 2080's 8 GB at img 640 with YOLOv12-L — use 8–16, or pass <code>-1</code> for auto-fit.</p>
+  </div>
+
+  <div class="card">
+    <h2>Pipeline Self-Test</h2>
+    <div class="row">
+      <button class="secondary" id="btnTestQuick" onclick="runTest(false)">🧪 Quick test (~10 s, static checks)</button>
+      <button class="secondary" id="btnTestFull" onclick="runTest(true)">🧪 Full test (~2–5 min, real SDG + training)</button>
+      <span class="muted">11 checks: configs, assets, class-ID registry, converter quality filters, exp routing — plus a real generation and a 1-epoch training in full mode. Run after every change.</span>
+    </div>
   </div>
 </div>
 
@@ -265,11 +276,24 @@ function loadComponents(){
     }
   });
 }
-// Populate the class-source dropdown (preselect the v2.0 template), then load.
-fetch('/api/aas').then(r=>r.json()).then(files=>{
-  $('fClassAas').innerHTML = files.map(f=>`<option ${f.includes('v2.0')?'selected':''}>${f}</option>`).join('');
-  loadComponents();
-});
+// Populate the class-source dropdown (preselect the v2.0 template, or keep the
+// current choice on refresh), then reload the component list from it.
+function loadClassAasList(){
+  const cur = $('fClassAas').value;
+  fetch('/api/aas').then(r=>r.json()).then(files=>{
+    $('fClassAas').innerHTML = files.map(f=>
+      `<option ${f===cur||(!cur&&f.includes('v2.0'))?'selected':''}>${f}</option>`).join('');
+    loadComponents();
+  });
+}
+loadClassAasList();
+
+async function runTest(full){
+  if(full && !confirm('Full test runs a real Isaac Sim generation and a 1-epoch training (~2–5 min, uses the GPU). Continue?')) return;
+  const r = await post('/api/run_test', {full});
+  if(!r.ok){alert(r.error);return;}
+  startConsole(full ? 'Pipeline self-test (FULL)' : 'Pipeline self-test');
+}
 function setAll(v){document.querySelectorAll('.comp:not(:disabled)').forEach(c=>c.checked=v);updatePreview();}
 const selectedComps = ()=>[...document.querySelectorAll('.comp:checked')].map(c=>c.value);
 
@@ -364,6 +388,7 @@ async function pollStatus(){
     const b = $('statusBadge');
     $('btnStop').disabled = !s.running;
     $('btnRunSdg').disabled = s.running; $('btnRunTrain').disabled = s.running;
+    $('btnTestQuick').disabled = s.running; $('btnTestFull').disabled = s.running;
     if(s.running){ b.textContent = `⏳ ${s.name} — ${Math.floor(s.elapsed/60)}m ${s.elapsed%60}s`; b.className='run'; if(!polling) polling=setInterval(pollLogs,1000);}
     else if(s.name){ b.textContent = s.returncode===0 ? `✔ ${s.name} finished` : `✖ ${s.name} exited (${s.returncode})`; b.className = s.returncode===0?'ok':'err'; }
     else { b.textContent='idle'; b.className=''; }

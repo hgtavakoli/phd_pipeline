@@ -573,6 +573,17 @@ class Handler(BaseHTTPRequestHandler):
             ok, err = start_job("OD training", cmd, OD_DIR)
             return self._json({"ok": ok, "error": err})
 
+        if route == "/api/run_test":
+            # Pipeline self-test as a regular job (live console output).
+            python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
+            cmd = [python, "-X", "utf8", str(ROOT / "scripts" / "test_pipeline.py")]
+            name = "Pipeline self-test (static)"
+            if payload.get("full"):
+                cmd.append("--full")
+                name = "Pipeline self-test (FULL: SDG + training)"
+            ok, err = start_job(name, cmd, ROOT)
+            return self._json({"ok": ok, "error": err})
+
         if route == "/api/stop":
             return self._json({"ok": stop_job()})
 
