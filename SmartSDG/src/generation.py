@@ -44,6 +44,13 @@ def run_generation_task(
     import omni.usd
     from pxr import Sdf
 
+    # Full reproducibility: --seed already fixes Python/NumPy RNGs (camera
+    # paths, collision-aware placement); this also fixes Replicator's own RNG
+    # (rotations, light intensity/temperature, uniform spawn distributions).
+    if getattr(args, "seed", None) is not None:
+        rep.set_global_seed(args.seed)
+        print(f"Replicator global seed set to {args.seed} (fully reproducible run)")
+
     # --- Use processed config parameters for better readability ---
     paths = config.paths
     gen_params = config.generation_params
