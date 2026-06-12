@@ -36,7 +36,9 @@ SDG_v2/
 │
 ├── scripts/
 │   ├── launch_dashboard.bat   ← start the dashboard (recommended entry point)
-│   └── run_sdg.bat            ← interactive CLI launcher (validated defaults)
+│   ├── run_sdg.bat            ← interactive CLI launcher (validated defaults)
+│   ├── run_tests.bat          ← pipeline self-test (add `full` for SDG+training)
+│   └── test_pipeline.py       ← the test suite itself
 │
 ├── SmartSDG/                  ← STAGE 1-2: generation + YOLO conversion
 │   ├── main.py                ← entry point (all CLI flags documented in --help)
@@ -152,6 +154,18 @@ each one does and *why* these values):
 > ⚠ **SDG is highly sensitive to these.** Change one at a time, regenerate a
 > small batch (e.g. 20 samples), inspect images + FINAL DATASET SUMMARY, and
 > record the change in [CHANGELOG.md](CHANGELOG.md) before scaling up.
+
+## Self-test — run after every change
+
+```bat
+scripts\run_tests.bat        :: static checks (~10 s, no GPU)
+scripts\run_tests.bat full   :: + real SDG generation + training (~2-5 min)
+```
+
+11 checks across 3 tiers: config/AAS/asset consistency, converter quality
+filters (frame-drop invariant), exp-folder routing, then a real Isaac Sim
+generation and a 1-epoch training producing weights. Exit code 0 = all good;
+test artifacts are cleaned up automatically.
 
 ---
 
