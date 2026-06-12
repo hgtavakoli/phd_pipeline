@@ -172,6 +172,75 @@ def generate_dataset_aas(dataset_rel, meta=None):
     return str(out.relative_to(AAS_DIR))
 
 
+SDG_CONFIG = SMARTSDG / "src" / "config" / "config.yaml"
+
+
+def _append_component_to_config(name, usd_filename):
+    """Append-only registration of a new component in config.yaml's
+    COMPONENT_USD_MAP. Inserted at the END of the map so it receives the next
+    free class ID — existing IDs never shift (old datasets stay valid).
+    Edits the raw text to preserve the file's comments and formatting."""
+    lines = SDG_CONFIG.read_text(encoding="utf-8").splitlines(keepends=True)
+    for i, line in enumerate(lines):
+        if line.startswith("COMPONENT_USD_MAP:"):
+            j = i + 1
+            last_entry = i
+            while j < len(lines):
+                if lines[j].startswith(("  ", "\t")) and lines[j].strip() and not lines[j].lstrip().startswith("#"):
+                    last_entry = j
+                elif lines[j].strip() == "" or not lines[j].startswith(" "):
+                    break
+                j += 1
+            lines.insert(last_entry + 1, f'  {name}: "{usd_filename}"\n')
+            SDG_CONFIG.write_text("".join(lines), encoding="utf-8")
+            return True
+    return False
+
+
+def component_status(aas_path):
+    """Build the component list for the dashboard from a chosen AAS file,
+    validated against config.yaml and the USD files on disk.
+
+    - classes come from the AAS 'names' property (user-editable record)
+    - a class new to config.yaml whose USD exists on disk is auto-registered
+      (append-only -> next free class ID)
+    - a class whose USD is missing is reported as unavailable (grayed out)
+    """
+    import yaml
+    cfg = yaml.safe_load(SDG_CONFIG.read_text(encoding="utf-8"))
+    usd_map = dict(cfg["COMPONENT_USD_MAP"])
+    assets_dir = SMARTSDG / cfg["paths"]["base"] / cfg["paths"]["components_rel"]
+
+    raw = _aas_get_property(json.loads(aas_path.read_text(encoding="utf-8-sig")), "names")
+    aas_names = [n.strip() for n in (raw or "").split(",") if n.strip()]
+
+    # Auto-register: AAS class not in config yet, but <name>.usd exists on disk
+    usd_files = {f.name.lower(): f.name for f in assets_dir.glob("*.usd")}
+    registered = []
+    for name in aas_names:
+        if name not in usd_map and f"{name.lower()}.usd" in usd_files:
+            usd = usd_files[f"{name.lower()}.usd"]
+            if _append_component_to_config(name, usd):
+                usd_map[name] = usd
+                registered.append(f"{name} (class ID {len(usd_map) - 1}, {usd})")
+
+    items = []
+    for name, usd in usd_map.items():  # config map order = global class IDs
+        exists = (assets_dir / usd).exists()
+        items.append({"name": name, "usd": usd, "available": exists,
+                      "reason": "" if exists else f"USD file missing in assets: {usd}"})
+    for name in aas_names:             # declared in AAS, unresolvable -> grayed
+        if name not in usd_map:
+            items.append({"name": name, "usd": None, "available": False,
+                          "reason": f"declared in AAS but no '{name}.usd' found in assets"})
+
+    warning = ""
+    if aas_names and [n for n in aas_names if n in usd_map] != [n for n in usd_map if n in aas_names]:
+        warning = (f"Class order differs between this AAS ({aas_names}) and the ID registry "
+                   f"({list(usd_map.keys())}). Class IDs always follow the registry order.")
+    return {"components": items, "registered": registered, "warning": warning}
+
+
 # --- Command builders -----------------------------------------------------------
 
 def build_sdg_cmd(p):
@@ -389,43 +458,19 @@ class Handler(BaseHTTPRequestHandler):
             return self._json(files)
 
         if route == "/api/components":
-            # Components cross-checked across three sources:
-            #   1. config.yaml COMPONENT_USD_MAP — defines the global YOLO class
-            #      IDs (list order) and the USD filename per component
-            #   2. the template AAS classes list — the canonical class record
-            #   3. the assets folder on disk — is the USD file actually there?
-            # A component is selectable only if its USD file exists. Components
-            # declared in the AAS but absent from config/disk appear grayed out.
+            # Component list driven by an AAS file chosen by the user
+            # (?aas=<relpath>, default the v2.0 template) and validated against
+            # the assets folder. NEW classes declared in the AAS whose USD file
+            # exists on disk are AUTO-REGISTERED into config.yaml
+            # COMPONENT_USD_MAP (append-only: new components get the next free
+            # class ID, existing IDs never change — that keeps every previously
+            # generated dataset valid).
             try:
-                import yaml
-                cfg = yaml.safe_load((SMARTSDG / "src" / "config" / "config.yaml").read_text(encoding="utf-8"))
-                usd_map = cfg["COMPONENT_USD_MAP"]
-                assets_dir = SMARTSDG / cfg["paths"]["base"] / cfg["paths"]["components_rel"]
-                aas_names = []
-                try:
-                    raw = _aas_get_property(json.loads(TEMPLATE_AAS.read_text(encoding="utf-8-sig")), "names")
-                    aas_names = [n.strip() for n in (raw or "").split(",") if n.strip()]
-                except Exception:
-                    pass
-
-                items = []
-                for name, usd in usd_map.items():  # config order = class ID order
-                    exists = (assets_dir / usd).exists()
-                    items.append({
-                        "name": name, "usd": usd, "available": exists,
-                        "reason": "" if exists else f"USD file missing in assets: {usd}",
-                    })
-                for name in aas_names:             # AAS-only classes -> grayed
-                    if name not in usd_map:
-                        items.append({"name": name, "usd": None, "available": False,
-                                      "reason": "declared in AAS but not in config.yaml COMPONENT_USD_MAP"})
-
-                warning = ""
-                if aas_names and aas_names != list(usd_map.keys()):
-                    warning = ("AAS class list and config.yaml COMPONENT_USD_MAP differ — "
-                               f"AAS: {aas_names} vs config: {list(usd_map.keys())}. "
-                               "Class IDs follow config.yaml; align the AAS template.")
-                return self._json({"components": items, "warning": warning})
+                aas_rel = q.get("aas", [str(TEMPLATE_AAS.relative_to(AAS_DIR))])[0]
+                aas_path = (AAS_DIR / aas_rel).resolve()
+                if not str(aas_path).startswith(str(AAS_DIR.resolve())) or not aas_path.exists():
+                    raise ValueError(f"AAS file not found: {aas_rel}")
+                return self._json(component_status(aas_path))
             except Exception as e:
                 return self._json({"error": str(e)}, 500)
 

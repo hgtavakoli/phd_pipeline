@@ -70,9 +70,14 @@
   <div class="card">
     <h2>Synthetic Data Generation</h2>
     <div class="row">
+      <div><label>Class source (AAS file — edit it to add/change components)</label>
+        <select id="fClassAas" onchange="loadComponents()" style="min-width:320px"></select></div>
+    </div>
+    <div class="row">
       <div><label>Components</label>
         <span class="muted"><a href="#" onclick="setAll(true);return false">all</a> · <a href="#" onclick="setAll(false);return false">none</a></span>
         <div class="chips" id="comps"></div>
+        <div id="compRegistered" style="color:var(--accent);font-size:.78rem;margin-top:4px"></div>
         <div id="compWarning" style="color:var(--yellow);font-size:.78rem;margin-top:4px"></div>
       </div>
     </div>
@@ -247,13 +252,23 @@ function buildChips(){
        ${c.name}${c.available?'':' ⛔'}</label>`).join('');
 }
 buildChips();
-fetch('/api/components').then(r=>r.json()).then(d=>{
-  if(d && Array.isArray(d.components) && d.components.length){
-    COMP_ITEMS = d.components;
-    COMPONENTS = d.components.filter(c=>c.usd).map(c=>c.name); // class-ID order (config map)
-    $('compWarning').textContent = d.warning || '';
-    buildChips(); updatePreview();
-  }
+function loadComponents(){
+  const aas = $('fClassAas').value;
+  fetch('/api/components' + (aas ? '?aas='+encodeURIComponent(aas) : '')).then(r=>r.json()).then(d=>{
+    if(d && Array.isArray(d.components) && d.components.length){
+      COMP_ITEMS = d.components;
+      COMPONENTS = d.components.filter(c=>c.usd).map(c=>c.name); // class-ID order (registry)
+      $('compWarning').textContent = d.warning || '';
+      $('compRegistered').textContent = (d.registered && d.registered.length)
+        ? '✚ auto-registered new component(s): ' + d.registered.join(', ') : '';
+      buildChips(); updatePreview();
+    }
+  });
+}
+// Populate the class-source dropdown (preselect the v2.0 template), then load.
+fetch('/api/aas').then(r=>r.json()).then(files=>{
+  $('fClassAas').innerHTML = files.map(f=>`<option ${f.includes('v2.0')?'selected':''}>${f}</option>`).join('');
+  loadComponents();
 });
 function setAll(v){document.querySelectorAll('.comp:not(:disabled)').forEach(c=>c.checked=v);updatePreview();}
 const selectedComps = ()=>[...document.querySelectorAll('.comp:checked')].map(c=>c.value);
