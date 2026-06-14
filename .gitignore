@@ -41,9 +41,11 @@ OD_training/datasets/
 OD_training/dataset_experiments/
 OD_training/config/generated_training_config.yaml
 
-# ----- Stage 4: Active learning — working data & outputs -----
+# ----- Stage 4: Active learning — working data, outputs, harvest -----
 active_learning/data/
 active_learning/output/
+active_learning/harvest/
+active_learning/runs/
 
 # ----- Stage 5: Continual learning — results & generated configs -----
 continual_learning/results/
