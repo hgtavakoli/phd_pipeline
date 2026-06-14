@@ -57149,13 +57149,13 @@
         {
          "idShort": "img_size",
          "valueType": "xs:string",
-         "value": "416",
+         "value": "320",
          "modelType": "Property"
         },
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "8",
+         "value": "4",
          "modelType": "Property"
         },
         {
@@ -57174,13 +57174,13 @@
         {
          "idShort": "img_size",
          "valueType": "xs:string",
-         "value": "416",
+         "value": "320",
          "modelType": "Property"
         },
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "8",
+         "value": "4",
          "modelType": "Property"
         },
         {
@@ -57230,13 +57230,13 @@
            "idShort": "output_dir",
            "valueType": "xs:string",
            "modelType": "Property",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\output\\MULTI_Cabin-GlueGun-BLid_Medium_plane"
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\output\\MULTI_Cabin-GlueGun-BLid_Medium_plane__Replicator"
           },
           {
            "idShort": "initial_model_path",
            "valueType": "xs:string",
            "modelType": "Property",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\yolo11n.pt"
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\yolov12l.pt"
           }
          ],
          "modelType": "SubmodelElementList"
@@ -57248,19 +57248,19 @@
           {
            "idShort": "epochs_per_round",
            "valueType": "xs:integer",
-           "value": "3",
+           "value": "1",
            "modelType": "Property"
           },
           {
            "idShort": "batch_size",
            "valueType": "xs:integer",
-           "value": "8",
+           "value": "4",
            "modelType": "Property"
           },
           {
            "idShort": "img_size",
            "valueType": "xs:integer",
-           "value": "416",
+           "value": "320",
            "modelType": "Property"
           },
           {
@@ -57291,19 +57291,19 @@
           {
            "idShort": "al_rounds",
            "valueType": "xs:integer",
-           "value": "3",
+           "value": "1",
            "modelType": "Property"
           },
           {
            "idShort": "initial_subset_size",
            "valueType": "xs:integer",
-           "value": "10",
+           "value": "6",
            "modelType": "Property"
           },
           {
            "idShort": "add_per_round",
            "valueType": "xs:integer",
-           "value": "10",
+           "value": "4",
            "modelType": "Property"
           },
           {
