@@ -57155,7 +57155,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "32",
+         "value": "7",
          "modelType": "Property"
         },
         {
@@ -57180,7 +57180,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "32",
+         "value": "7",
          "modelType": "Property"
         },
         {
@@ -57210,7 +57210,158 @@
     },
     {
      "idShort": "ODOptimisation",
-     "modelType": "SubmodelElementCollection"
+     "modelType": "SubmodelElementCollection",
+     "value": [
+      {
+       "idShort": "ActiveLearning",
+       "typeValueListElement": "SubmodelElement",
+       "value": [
+        {
+         "idShort": "Paths",
+         "typeValueListElement": "SubmodelElement",
+         "value": [
+          {
+           "idShort": "data_dir",
+           "valueType": "xs:string",
+           "modelType": "Property",
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\data"
+          },
+          {
+           "idShort": "output_dir",
+           "valueType": "xs:string",
+           "modelType": "Property",
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\output\\MULTI_GlueGun_Medium_plane"
+          },
+          {
+           "idShort": "initial_model_path",
+           "valueType": "xs:string",
+           "modelType": "Property",
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\yolov12l.pt"
+          }
+         ],
+         "modelType": "SubmodelElementList"
+        },
+        {
+         "idShort": "TrainingParameters",
+         "typeValueListElement": "SubmodelElement",
+         "value": [
+          {
+           "idShort": "epochs_per_round",
+           "valueType": "xs:integer",
+           "value": "3",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "batch_size",
+           "valueType": "xs:integer",
+           "value": "7",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "img_size",
+           "valueType": "xs:integer",
+           "value": "640",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "learning_rate",
+           "valueType": "xs:float",
+           "value": "0.01",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "weight_decay",
+           "valueType": "xs:double",
+           "value": "0.0005",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "optimizer",
+           "valueType": "xs:string",
+           "value": "auto",
+           "modelType": "Property"
+          }
+         ],
+         "modelType": "SubmodelElementList"
+        },
+        {
+         "idShort": "ActiveLearningSettings",
+         "typeValueListElement": "SubmodelElement",
+         "value": [
+          {
+           "idShort": "al_rounds",
+           "valueType": "xs:integer",
+           "value": "1",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "initial_subset_size",
+           "valueType": "xs:integer",
+           "value": "5",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "add_per_round",
+           "valueType": "xs:integer",
+           "value": "2",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "ud_split",
+           "valueType": "xs:float",
+           "value": "0.5",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "al_score_threshold",
+           "valueType": "xs:float",
+           "value": "0.10",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "al_strategy",
+           "valueType": "xs:string",
+           "value": "ppal_feat",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "al_class_balance",
+           "valueType": "xs:boolean",
+           "value": "true",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "img_extension",
+           "valueType": "xs:string",
+           "value": ".png",
+           "modelType": "Property"
+          }
+         ],
+         "modelType": "SubmodelElementList"
+        },
+        {
+         "idShort": "DatasetInfo",
+         "typeValueListElement": "SubmodelElement",
+         "value": [
+          {
+           "idShort": "num_classes",
+           "valueType": "xs:integer",
+           "value": "9",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "dataset_yaml",
+           "valueType": "xs:string",
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\data\\full-data\\dataset.yaml",
+           "modelType": "Property"
+          }
+         ],
+         "modelType": "SubmodelElementList"
+        }
+       ],
+       "modelType": "SubmodelElementList"
+      }
+     ]
     },
     {
      "category": "CONSTANT",

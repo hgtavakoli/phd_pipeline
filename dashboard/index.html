@@ -154,6 +154,36 @@
   </div>
 
   <div class="card">
+    <h2>Active Learning (PPAL)</h2>
+    <div class="row">
+      <div><label>Dataset (the unlabeled pool)</label><select id="alDs" style="min-width:300px"></select>
+        <button class="secondary" style="padding:5px 10px" title="Refresh dataset list" onclick="loadAlDatasets()">⟳</button></div>
+      <div><label>Strategy</label>
+        <select id="alStrategy">
+          <option value="ppal_feat" selected>ppal_feat — uncertainty + appearance-embedding diversity (recommended)</option>
+          <option value="ppal_box">ppal_box — uncertainty + box-geometry diversity (legacy)</option>
+          <option value="entropy">entropy — uncertainty only</option>
+          <option value="random">random — baseline</option>
+        </select></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="alBalance" type="checkbox" checked> class-balance boost</label></div>
+    </div>
+    <div class="row">
+      <div><label>AL rounds</label><input id="alRounds" type="number" min="1" value="3" style="width:80px"></div>
+      <div><label>Initial subset</label><input id="alInit" type="number" min="1" value="10" style="width:80px"></div>
+      <div><label>Add per round</label><input id="alAdd" type="number" min="1" value="5" style="width:80px"></div>
+      <div><label>Epochs / round</label><input id="alEpochs" type="number" min="1" value="10" style="width:80px"></div>
+      <div><label>Batch</label><input id="alBatch" type="number" min="1" value="8" style="width:80px"></div>
+      <div><label>Image size</label><input id="alImgsz" type="number" min="64" value="640" style="width:90px"></div>
+      <div><label>Initial weights</label><select id="alWeights"></select></div>
+      <button class="primary" id="btnRunAl" onclick="runAl()">▶ Run AL experiment</button>
+    </div>
+    <p class="muted"><b>Record mode:</b> the chosen strategy and budget are saved into the dataset's AAS file.
+    The selected dataset becomes the unlabeled pool; validation runs on the <b>real</b> image set (sim-to-real).
+    Per-round learning curve is written to <code>active_learning\output\&lt;dataset&gt;\al_summary.csv</code> —
+    run once per strategy on the same dataset + seed for the ablation comparison.</p>
+  </div>
+
+  <div class="card">
     <h2>Pipeline Self-Test</h2>
     <div class="row">
       <button class="secondary" id="btnTestQuick" onclick="runTest(false)">🧪 Quick test (~10 s, static checks)</button>
@@ -360,7 +390,37 @@ async function runTrain(){
   startConsole('OD training');
 }
 fetch('/api/weights').then(r=>r.json()).then(ws=>{
-  $('tWeights').innerHTML += ws.map(w=>`<option value="${w}">${w}</option>`).join('');});
+  $('tWeights').innerHTML += ws.map(w=>`<option value="${w}">${w}</option>`).join('');
+  $('alWeights').innerHTML = ws.map(w=>`<option value="${w}" ${w.includes('11n')?'selected':''}>${w}</option>`).join('');});
+
+// ---------- active learning ----------
+function loadAlDatasets(){
+  fetch('/api/datasets').then(r=>r.json()).then(list=>{
+    const cur = $('alDs').value;
+    $('alDs').innerHTML = list.map(d=>
+      `<option value="${d.rel.replace(/\\/g,'\\\\')}" ${d.rel===cur?'selected':''}>${d.name} (${d.images} imgs)</option>`).join('')
+      || '<option value="">— no datasets, generate first —</option>';
+  });
+}
+loadAlDatasets();
+async function runAl(){
+  const rel = $('alDs').value;
+  if(!rel){alert('Generate a dataset first');return;}
+  const p = {
+    rel: rel.replace(/\\\\/g,'\\'),
+    strategy: $('alStrategy').value,
+    class_balance: $('alBalance').checked,
+    al_rounds: +$('alRounds').value, initial_subset_size: +$('alInit').value,
+    add_per_round: +$('alAdd').value, epochs_per_round: +$('alEpochs').value,
+    batch_size: +$('alBatch').value, img_size: +$('alImgsz').value,
+    weights: $('alWeights').value,
+  };
+  const need = p.initial_subset_size + p.al_rounds * p.add_per_round;
+  if(!confirm(`AL experiment: ${p.al_rounds} rounds, ${need} images total budget, strategy ${p.strategy}.\nThis trains ${p.al_rounds+1} models (~minutes each). Continue?`)) return;
+  const r = await post('/api/run_al', p);
+  if(!r.ok){alert(r.error);return;}
+  startConsole(`Active Learning (${p.strategy})`);
+}
 async function stopJob(){ if(confirm('Stop the running job?')) await post('/api/stop'); }
 
 // ---------- live console ----------
@@ -389,6 +449,7 @@ async function pollStatus(){
     $('btnStop').disabled = !s.running;
     $('btnRunSdg').disabled = s.running; $('btnRunTrain').disabled = s.running;
     $('btnTestQuick').disabled = s.running; $('btnTestFull').disabled = s.running;
+    $('btnRunAl').disabled = s.running;
     if(s.running){ b.textContent = `⏳ ${s.name} — ${Math.floor(s.elapsed/60)}m ${s.elapsed%60}s`; b.className='run'; if(!polling) polling=setInterval(pollLogs,1000);}
     else if(s.name){ b.textContent = s.returncode===0 ? `✔ ${s.name} finished` : `✖ ${s.name} exited (${s.returncode})`; b.className = s.returncode===0?'ok':'err'; }
     else { b.textContent='idle'; b.className=''; }

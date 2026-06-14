@@ -77,7 +77,18 @@ def move_files(config: dict, filenames: list, source_dir: str, dest_dir: str):
 
 
 # +--------------------------------------------------------------------------+
-# |          PPAL Selection Logic (Fully Refactored)                         |
+# |  Active Learning Selection Strategies                                    |
+# |                                                                          |
+# |  config['al_strategy'] chooses how the next round's images are picked:   |
+# |    random    – uniform random (the baseline every AL method must beat)   |
+# |    entropy   – uncertainty only (PPAL phase 1, top-K)                    |
+# |    ppal_box  – PPAL: uncertainty + CCMS diversity on BOX GEOMETRY        |
+# |                (original implementation of this repo)                    |
+# |    ppal_feat – PPAL: uncertainty + diversity on APPEARANCE EMBEDDINGS    |
+# |                from the detector backbone (faithful to the PPAL paper,   |
+# |                recommended)                                              |
+# |  config['al_class_balance'] (bool) – boost images containing classes     |
+# |  that are still rare in the labeled set.                                 |
 # +--------------------------------------------------------------------------+
 
 def cosine_similarity(A, B):
@@ -137,42 +148,31 @@ def probabilistic_selection(scores, N):
     return list(selected)
 
 
-def get_images_for_next_round(config: dict, unlabeled_image_dir: str, yolo_model_path: str):
-    print("\n--- Starting PPAL Image Selection ---")
-    target_number = config['add_per_round']
-    model = YOLO(yolo_model_path)
-    image_files = [f for f in os.listdir(os.path.join(unlabeled_image_dir, "images")) if
-                   f.lower().endswith(config['IMG_EXTENSION'])]
-    total_images = len(image_files)
-
-    if total_images <= target_number:
-        print("Warning: Not enough images in pool. Returning all remaining images.")
-        return [os.path.splitext(f)[0] for f in image_files]
-
-    # 1. Inference
+def _run_inference(config, model, unlabeled_image_dir, image_files):
+    """Detector predictions for every pool image (boxes, scores, classes)."""
     all_outputs = {}
-    print(f"[1/4] Running inference on {total_images} images...")
     for filename in image_files:
-        results = \
-        model(os.path.join(unlabeled_image_dir, "images", filename), verbose=False, conf=config['al_score_threshold'])[
-            0]
+        results = model(os.path.join(unlabeled_image_dir, "images", filename),
+                        verbose=False, conf=config['al_score_threshold'])[0]
         basename = os.path.splitext(filename)[0]
         all_outputs[basename] = {
-            "boxes": results.boxes.xywh.cpu().numpy().reshape(-1, 4) if results.boxes.xywh is not None else np.array(
-                []),
+            "boxes": results.boxes.xywh.cpu().numpy().reshape(-1, 4) if results.boxes.xywh is not None else np.array([]),
             "scores": results.boxes.conf.cpu().numpy() if results.boxes.conf is not None else np.array([]),
-            "classes": results.boxes.cls.cpu().numpy().astype(int) if results.boxes.cls is not None else np.array([])
+            "classes": results.boxes.cls.cpu().numpy().astype(int) if results.boxes.cls is not None else np.array([]),
         }
+    return all_outputs
 
-    # 2. Uncertainty Sampling
-    print("[2/4] Calculating uncertainty...")
+
+def _uncertainty_scores(config, all_outputs, labeled_class_counts=None):
+    """PPAL phase 1: difficulty-calibrated entropy per image, normalized to
+    [0, 1]. Optionally boosts images containing classes that are rare in the
+    labeled set so far (class-balance term for imbalanced real-world pools)."""
     class_uncertainties = {i: 1.0 for i in range(config['num_classes'])}
     image_uncertainties = {}
     for basename, output in all_outputs.items():
         entropy = 0.0
         for i in range(len(output['scores'])):
             score = output['scores'][i]
-            # Ensure class_id is valid before accessing class_uncertainties
             if 0 <= output['classes'][i] < config['num_classes']:
                 class_id = output['classes'][i]
                 current_uncertainty = -score * math.log2(score + 1e-9)
@@ -180,33 +180,125 @@ def get_images_for_next_round(config: dict, unlabeled_image_dir: str, yolo_model
                 entropy += current_uncertainty * class_uncertainties[class_id]
         image_uncertainties[basename] = entropy
 
-    max_unc = max(image_uncertainties.values() or [1])
-    image_uncertainties = {k: v / max_unc for k, v in image_uncertainties.items()}
+    if config.get('al_class_balance') and labeled_class_counts:
+        # rarity weight: classes barely present in the labeled set get up to a
+        # 50% bonus for images that contain them
+        total = sum(labeled_class_counts.values()) or 1
+        rarity = {c: 1.0 - (n / total) for c, n in labeled_class_counts.items()}
+        for basename, output in all_outputs.items():
+            present = set(int(c) for c in output['classes'])
+            if present:
+                bonus = max(rarity.get(c, 1.0) for c in present)
+                image_uncertainties[basename] *= (1.0 + 0.5 * bonus)
 
+    max_unc = max(image_uncertainties.values() or [1])
+    if max_unc <= 0:
+        # model produced no confident detections yet (common very early) —
+        # fall back to uniform scores so selection degrades to random, not crash
+        print("  (no confident detections; uncertainty scores uniform this round)")
+        return {k: 1.0 for k in image_uncertainties}
+    return {k: v / max_unc for k, v in image_uncertainties.items()}
+
+
+def _phase1_candidates(config, scores, total_images, target_number):
+    """Probabilistic uncertainty pre-selection (PPAL phase 1 output size)."""
     split = config['ud_split']
     num_for_unc_pass = int((total_images - target_number) * (1 - split) + target_number)
-    unc_chosen_images = probabilistic_selection(image_uncertainties, num_for_unc_pass)
+    return probabilistic_selection(scores, num_for_unc_pass)
 
-    if len(unc_chosen_images) <= target_number: return unc_chosen_images
 
-    # 3. Diversity Sampling (CCMS)
-    print("[3/4] Calculating similarity matrix...")
-    diversity_candidates = {name: all_outputs[name] for name in unc_chosen_images}
-    cand_names, cand_outputs = list(diversity_candidates.keys()), list(diversity_candidates.values())
-    count_div = len(cand_names)
-    sim_matrix = np.zeros((count_div, count_div))
-    for i in range(count_div):
-        for j in range(i + 1, count_div):
+def _diversity_box(all_outputs, cand_names, target_number):
+    """Original repo behavior: CCMS on bounding-box geometry vectors."""
+    cand_outputs = [all_outputs[n] for n in cand_names]
+    n = len(cand_names)
+    sim_matrix = np.zeros((n, n))
+    for i in range(n):
+        for j in range(i + 1, n):
             sim = compute_ccms(cand_outputs[i], cand_outputs[j])
             sim_matrix[i, j] = sim_matrix[j, i] = sim
-
     dist_matrix = 1 / (sim_matrix + 0.2)
     np.fill_diagonal(dist_matrix, 0)
-
-    # 4. K-Means Clustering
-    print("[4/4] Running K-Means clustering...")
     final_indices = kmeans(dist_matrix, K=target_number)
-    final_selection = [cand_names[idx] for idx in final_indices]
+    return [cand_names[i] for i in final_indices]
 
-    print(f"--- Selection Complete. Selected {len(final_selection)} images. ---")
+
+def _diversity_features(config, model, unlabeled_image_dir, cand_names, target_number):
+    """Faithful PPAL phase 2: diversity on APPEARANCE EMBEDDINGS from the
+    detector backbone (ultralytics model.embed), cosine distance + k-means.
+    Visually similar images cluster together; one representative per cluster
+    is selected."""
+    paths = [os.path.join(unlabeled_image_dir, "images", f"{n}{config['IMG_EXTENSION']}")
+             for n in cand_names]
+    embeddings = []
+    batch = 16
+    for i in range(0, len(paths), batch):
+        embs = model.embed(paths[i:i + batch], verbose=False)
+        embeddings.extend(e.cpu().numpy().flatten() for e in embs)
+    X = np.stack(embeddings)
+    X = X / (np.linalg.norm(X, axis=1, keepdims=True) + 1e-9)
+    sim = X @ X.T                       # cosine similarity in [-1, 1]
+    dist_matrix = 1.0 - sim             # cosine distance
+    np.fill_diagonal(dist_matrix, 0)
+    final_indices = kmeans(dist_matrix, K=target_number)
+    return [cand_names[i] for i in final_indices]
+
+
+def get_images_for_next_round(config: dict, unlabeled_image_dir: str, yolo_model_path: str,
+                              labeled_class_counts: dict = None):
+    """Select the next batch of images from the unlabeled pool, using the
+    strategy in config['al_strategy'] (default: ppal_feat)."""
+    strategy = config.get('al_strategy', 'ppal_feat')
+    target_number = config['add_per_round']
+    image_files = [f for f in os.listdir(os.path.join(unlabeled_image_dir, "images"))
+                   if f.lower().endswith(config['IMG_EXTENSION'])]
+    total_images = len(image_files)
+    print(f"\n--- AL selection: strategy='{strategy}', pool={total_images}, budget={target_number} ---")
+
+    if total_images <= target_number:
+        print("Warning: Not enough images in pool. Returning all remaining images.")
+        return [os.path.splitext(f)[0] for f in image_files]
+
+    if strategy == "random":
+        return random.sample([os.path.splitext(f)[0] for f in image_files], target_number)
+
+    model = YOLO(yolo_model_path)
+    print(f"[1/4] Running inference on {total_images} images...")
+    all_outputs = _run_inference(config, model, unlabeled_image_dir, image_files)
+
+    print("[2/4] Calculating uncertainty...")
+    scores = _uncertainty_scores(config, all_outputs, labeled_class_counts)
+
+    if strategy == "entropy":
+        ranked = sorted(scores, key=scores.get, reverse=True)
+        return ranked[:target_number]
+
+    cand_names = _phase1_candidates(config, scores, total_images, target_number)
+    if len(cand_names) <= target_number:
+        return cand_names
+
+    print(f"[3/4] Diversity stage on {len(cand_names)} candidates...")
+    if strategy == "ppal_feat":
+        final_selection = _diversity_features(config, model, unlabeled_image_dir, cand_names, target_number)
+    else:  # ppal_box
+        final_selection = _diversity_box(all_outputs, cand_names, target_number)
+
+    print(f"[4/4] --- Selection Complete. Selected {len(final_selection)} images. ---")
     return final_selection
+
+
+def count_labeled_classes(labels_dir: str, num_classes: int) -> dict:
+    """Class-instance counts across all YOLO label files in a directory —
+    used by the class-balance term to know which classes are still rare."""
+    counts = {i: 0 for i in range(num_classes)}
+    if not os.path.isdir(labels_dir):
+        return counts
+    for f in os.listdir(labels_dir):
+        if f.endswith(".txt"):
+            with open(os.path.join(labels_dir, f)) as fh:
+                for line in fh:
+                    parts = line.split()
+                    if parts:
+                        cid = int(parts[0])
+                        if 0 <= cid < num_classes:
+                            counts[cid] += 1
+    return counts

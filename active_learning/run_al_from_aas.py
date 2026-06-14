@@ -127,9 +127,15 @@ if __name__ == '__main__':
         experiment_config['F_VAL'] = "val"
         experiment_config['F_WORKDIR'] = "workspace"
         experiment_config['F_UNLABELED'] = "unlabeled"
-        experiment_config['IMG_EXTENSION'] = ".jpg"
+        # SDG datasets are .png; allow override from the AAS (img_extension)
+        experiment_config['IMG_EXTENSION'] = experiment_config.get('img_extension', '.png')
         experiment_config['ANN_EXTENSION'] = ".txt"
-        experiment_config['SEED'] = 42
+        experiment_config['SEED'] = int(experiment_config.get('seed', 42))
+        # Strategy defaults (overridable from the AAS / dashboard)
+        experiment_config.setdefault('al_strategy', 'ppal_feat')
+        experiment_config.setdefault('al_class_balance', True)
+        experiment_config.setdefault('al_score_threshold', 0.10)
+        experiment_config.setdefault('ud_split', 0.5)
 
         # --- Step 3: Launch the Active Learning Pipeline ---
         print("\n--- Starting Active Learning Pipeline ---")

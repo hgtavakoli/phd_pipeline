@@ -46,12 +46,35 @@ def create_dataset_yaml(config: dict, data_path: str, round_num: int):
 
 
 # --- THIS IS THE NEW FUNCTION THAT YOUR LAUNCHER SCRIPT CAN IMPORT ---
+def _log_round_metrics(config, round_num, n_train_images, weights_path, data_yaml):
+    """Validate the round's model and append one line to al_summary.csv —
+    the per-round learning curve used to compare AL strategies."""
+    import csv
+    try:
+        metrics = YOLO(weights_path).val(data=data_yaml, verbose=False)
+        map50, map5095 = float(metrics.box.map50), float(metrics.box.map)
+    except Exception as e:
+        print(f"WARNING: round validation failed ({e}); logging NaN")
+        map50 = map5095 = float("nan")
+    summary = os.path.join(config['output_dir'], "al_summary.csv")
+    new_file = not os.path.exists(summary)
+    with open(summary, "a", newline="") as f:
+        w = csv.writer(f)
+        if new_file:
+            w.writerow(["round", "strategy", "train_images", "mAP50", "mAP50_95"])
+        w.writerow([round_num, config.get('al_strategy', 'ppal_feat'), n_train_images,
+                    f"{map50:.4f}", f"{map5095:.4f}"])
+    print(f"ROUND {round_num} RESULT: {n_train_images} images | mAP50={map50:.4f} | mAP50-95={map5095:.4f}")
+
+
 def run_al_pipeline(config: dict):
     """
     This function contains the entire active learning loop and is driven
     by a configuration dictionary passed from the AAS parser.
     """
     seed_everything(config['SEED'])
+    print(f"AL strategy: {config.get('al_strategy', 'ppal_feat')} | "
+          f"class balance: {config.get('al_class_balance', False)}")
 
     # Pass the config dictionary to the utility functions
     workdir_path, unlabeled_pool_path = utils.setup_workspace(config)
@@ -85,6 +108,7 @@ def run_al_pipeline(config: dict):
         # weight_decay=config['weight_decay'],
     )
     last_model_path = os.path.join(config['output_dir'], f"{config['PROJECT_NAME']}_round_0", "weights", "last.pt")
+    _log_round_metrics(config, 0, config['initial_subset_size'], last_model_path, round_0_yaml)
 
     # --- AL ROUNDS 1 to N ---
     for i in range(1, config['al_rounds'] + 1):
@@ -92,10 +116,15 @@ def run_al_pipeline(config: dict):
         print(f"### STARTING ACTIVE LEARNING - ROUND {i} ###")
         print("=" * 50)
 
+        # class counts of the CURRENT labeled set -> class-balance term
+        prev_labels_dir = os.path.join(workdir_path, f"round_{i - 1}", "labels", "train")
+        labeled_class_counts = utils.count_labeled_classes(prev_labels_dir, config['num_classes'])
+
         selected_files = utils.get_images_for_next_round(
             config,  # Pass the config dict
             unlabeled_image_dir=unlabeled_pool_path,
-            yolo_model_path=last_model_path
+            yolo_model_path=last_model_path,
+            labeled_class_counts=labeled_class_counts
         )
 
         round_i_path = utils.create_round_dataset(config, workdir_path, i)
@@ -125,5 +154,8 @@ def run_al_pipeline(config: dict):
         )
         last_model_path = os.path.join(config['output_dir'], f"{config['PROJECT_NAME']}_round_{i}", "weights",
                                        "last.pt")
+        n_train = len(os.listdir(curr_train_images))
+        _log_round_metrics(config, i, n_train, last_model_path, round_i_yaml)
 
     print("\n--- Active Learning Experiment Complete ---")
+    print(f"Per-round learning curve: {os.path.join(config['output_dir'], 'al_summary.csv')}")

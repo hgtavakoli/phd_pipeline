@@ -173,6 +173,8 @@ def generate_dataset_aas(dataset_rel, meta=None):
 
 
 SDG_CONFIG = SMARTSDG / "src" / "config" / "config.yaml"
+AL_DIR = ROOT / "active_learning"
+VAL_REAL = Path(r"C:\Users\hota02\Documents\sd_light_od\cluster_experiments\data\val_real")
 
 
 def _append_component_to_config(name, usd_filename):
@@ -239,6 +241,85 @@ def component_status(aas_path):
         warning = (f"Class order differs between this AAS ({aas_names}) and the ID registry "
                    f"({list(usd_map.keys())}). Class IDs always follow the registry order.")
     return {"components": items, "registered": registered, "warning": warning}
+
+
+def prepare_al_workspace(dataset_rel):
+    """Stage a generated dataset for active learning:
+       active_learning/data/full-data/{images,labels}/{train,val}
+    train pool = all images of the chosen SDG dataset (the 'unlabeled' pool),
+    val        = the real validation images (sim-to-real evaluation).
+    Returns (n_train_pool, n_val, class_names)."""
+    import yaml
+    d = _safe_path(dataset_rel)
+    if not d.is_dir():
+        raise ValueError(f"dataset not found: {d}")
+    full = AL_DIR / "data" / "full-data"
+    shutil.rmtree(AL_DIR / "data", ignore_errors=True)
+    for sub in ["images/train", "labels/train", "images/val", "labels/val"]:
+        (full / sub).mkdir(parents=True, exist_ok=True)
+
+    n_train = 0
+    for png in d.rglob("*.png"):
+        txt = png.with_suffix(".txt")
+        if txt.exists():
+            shutil.copy2(png, full / "images" / "train" / png.name)
+            shutil.copy2(txt, full / "labels" / "train" / txt.name)
+            n_train += 1
+    n_val = 0
+    if VAL_REAL.exists():
+        for img in VAL_REAL.glob("*.jpg"):
+            txt = img.with_suffix(".txt")
+            if txt.exists():
+                shutil.copy2(img, full / "images" / "val" / img.name)
+                shutil.copy2(txt, full / "labels" / "val" / txt.name)
+                n_val += 1
+
+    cfg = yaml.safe_load(SDG_CONFIG.read_text(encoding="utf-8"))
+    names = list(cfg["COMPONENT_USD_MAP"].keys())
+    (full / "dataset.yaml").write_text(
+        yaml.safe_dump({"nc": len(names), "names": names}), encoding="utf-8")
+    return n_train, n_val, names
+
+
+def build_al_cmd(p):
+    """Stage the dataset, write the AL parameters into the dataset's AAS
+    (record mode), and return the run command."""
+    rel = p.get("rel", "")
+    n_pool, n_val, names = prepare_al_workspace(rel)
+
+    budget = int(p.get("initial_subset_size", 10)) + int(p.get("al_rounds", 3)) * int(p.get("add_per_round", 5))
+    if budget > n_pool:
+        raise ValueError(f"budget too large: initial + rounds x add = {budget} images, "
+                         f"but the pool only has {n_pool}. Reduce rounds/budget or generate more data.")
+
+    # the dataset AAS is the record — regenerate from the current template
+    # (ensures the ActiveLearning section exists), then write the AL params
+    aas_rel = generate_dataset_aas(rel)
+    aas_path = AAS_DIR / aas_rel
+    d = _safe_path(rel)
+    data = json.loads(aas_path.read_text(encoding="utf-8-sig"))
+    weights = p.get("weights") or "yolo11n.pt"
+    weights_path = (OD_DIR / Path(weights).name)
+    _aas_set_properties(data, {
+        "data_dir": str(AL_DIR / "data"),
+        "output_dir": str(AL_DIR / "output" / d.name),
+        "initial_model_path": str(weights_path),
+        "dataset_yaml": str(AL_DIR / "data" / "full-data" / "dataset.yaml"),
+        "num_classes": len(names),
+        "al_strategy": p.get("strategy", "ppal_feat"),
+        "al_class_balance": "true" if p.get("class_balance", True) else "false",
+        "al_rounds": int(p.get("al_rounds", 3)),
+        "initial_subset_size": int(p.get("initial_subset_size", 10)),
+        "add_per_round": int(p.get("add_per_round", 5)),
+        "epochs_per_round": int(p.get("epochs_per_round", 10)),
+        "batch_size": int(p.get("batch_size", 8)),
+        "img_size": int(p.get("img_size", 640)),
+        "img_extension": ".png",
+    })
+    aas_path.write_text(json.dumps(data, indent=1), encoding="utf-8")
+
+    python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
+    return [python, "-X", "utf8", "run_al_from_aas.py", "--aas_file", str(aas_path)], n_pool, n_val
 
 
 # --- Command builders -----------------------------------------------------------
@@ -572,6 +653,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
             ok, err = start_job("OD training", cmd, OD_DIR)
             return self._json({"ok": ok, "error": err})
+
+        if route == "/api/run_al":
+            try:
+                cmd, n_pool, n_val = build_al_cmd(payload)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR)
+            return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
 
         if route == "/api/run_test":
             # Pipeline self-test as a regular job (live console output).
