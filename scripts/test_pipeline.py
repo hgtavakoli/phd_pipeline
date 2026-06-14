@@ -292,6 +292,50 @@ def t_training():
     return f"trained, weights at {weights[0].relative_to(OD_DIR)}"
 
 
+def t_al_loop():
+    """Functional AL smoke: run a 1-round experiment on the test dataset as the
+    unlabeled pool and confirm al_summary.csv gets a per-round learning curve.
+    Uses tiny settings — proves the loop completes, not the mAP."""
+    sys.path.insert(0, str(ROOT / "active_learning"))
+    sys.path.insert(0, str(ROOT / "dashboard"))
+    import server
+    ds_rel = str((SMARTSDG / "Datasets" / "yolo_experiments" / TEST_DS).relative_to(ROOT))
+    n_pool, n_val, names, img_ext = server.prepare_al_workspace(ds_rel)
+    assert n_pool >= 6, f"pool too small for AL test: {n_pool}"
+
+    al_out = ROOT / "active_learning" / "output" / f"_selftest_{TEST_DS}"
+    cfg = {
+        "data_dir": str(ROOT / "active_learning" / "data"),
+        "output_dir": str(al_out),
+        "initial_model_path": "yolo11n.pt",
+        "dataset_yaml": str(ROOT / "active_learning" / "data" / "full-data" / "dataset.yaml"),
+        "num_classes": len(names), "al_strategy": "ppal_feat", "al_class_balance": True,
+        "al_rounds": 1, "initial_subset_size": 4, "add_per_round": 3,
+        "epochs_per_round": 1, "batch_size": 4, "img_size": 320,
+        "al_score_threshold": 0.10, "ud_split": 0.5,
+        "PROJECT_NAME": "selftest_al", "F_FULL_DATA": "full-data", "F_TRAIN": "train",
+        "F_VAL": "val", "F_WORKDIR": "workspace", "F_UNLABELED": "unlabeled",
+        "IMG_EXTENSION": img_ext, "ANN_EXTENSION": ".txt", "SEED": 42,
+    }
+    code = ("import sys; sys.path.insert(0, r'%s'); "
+            "from main_yolo import run_al_pipeline; import json; "
+            "run_al_pipeline(json.loads(r'''%s'''))"
+            % (ROOT / "active_learning", json.dumps(cfg)))
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c", code],
+                       cwd=str(ROOT / "active_learning"), capture_output=True, text=True,
+                       encoding="utf-8", errors="replace", timeout=1800)
+    summary = al_out / "al_summary.csv"
+    try:
+        assert r.returncode == 0, f"AL exited {r.returncode}: {(r.stdout or r.stderr or '')[-300:]}"
+        assert summary.exists(), "al_summary.csv not written"
+        rows = summary.read_text().strip().splitlines()
+        assert len(rows) >= 3, f"expected round 0 + round 1 in summary, got {len(rows)-1} rounds"
+        return f"AL loop completed, {len(rows)-1} rounds logged to al_summary.csv"
+    finally:
+        shutil.rmtree(al_out, ignore_errors=True)
+        shutil.rmtree(ROOT / "active_learning" / "data", ignore_errors=True)
+
+
 def cleanup_test_artifacts():
     """Remove everything the full test created."""
     for d in [SMARTSDG / "Datasets" / "yolo_experiments" / TEST_DS,
@@ -338,6 +382,11 @@ def main():
         print("=" * 64)
         check("per-dataset AAS generation", t_dataset_aas)
         check("OD training on generated dataset", t_training)
+
+        print("=" * 64)
+        print("TIER 4 — Active Learning loop (~3-5 min)")
+        print("=" * 64)
+        check("AL multi-round loop + learning curve", t_al_loop)
 
         if not args.keep:
             cleanup_test_artifacts()
