@@ -44,6 +44,14 @@ ISAAC_PYTHON = r"C:\Users\hota02\Documents\omniverse\python.bat"
 TRAIN_PYTHON = r"C:\Users\hota02\AppData\Local\anaconda3\envs\yolov12\python.exe"
 
 PORT = 8765
+IMG_EXTS = (".png", ".jpg", ".jpeg")
+
+
+def _iter_images(folder):
+    """All images (png/jpg) under a folder, recursively."""
+    for p in folder.rglob("*"):
+        if p.suffix.lower() in IMG_EXTS:
+            yield p
 
 # --- Single-job process manager -------------------------------------------------
 # Only one job (generation or training) runs at a time — they share the GPU.
@@ -152,7 +160,7 @@ def generate_dataset_aas(dataset_rel, meta=None):
     if not d.is_dir():
         raise ValueError(f"dataset not found: {d}")
     data = json.loads(TEMPLATE_AAS.read_text(encoding="utf-8-sig"))
-    cameras = sorted({p.parent.name if p.parent != d else "" for p in d.rglob("*.png")} - {""}) \
+    cameras = sorted({p.parent.name if p.parent != d else "" for p in _iter_images(d)} - {""}) \
               or ["Replicator", "Replicator_01"]
     _aas_set_properties(data, {
         "base_data_dir": str(d) + "\\",
@@ -174,6 +182,7 @@ def generate_dataset_aas(dataset_rel, meta=None):
 
 SDG_CONFIG = SMARTSDG / "src" / "config" / "config.yaml"
 AL_DIR = ROOT / "active_learning"
+HARVEST_DIR = AL_DIR / "harvest"
 VAL_REAL = Path(r"C:\Users\hota02\Documents\sd_light_od\cluster_experiments\data\val_real")
 
 
@@ -259,11 +268,13 @@ def prepare_al_workspace(dataset_rel):
         (full / sub).mkdir(parents=True, exist_ok=True)
 
     n_train = 0
-    for png in d.rglob("*.png"):
+    img_ext = ".png"
+    for png in _iter_images(d):
         txt = png.with_suffix(".txt")
         if txt.exists():
             shutil.copy2(png, full / "images" / "train" / png.name)
             shutil.copy2(txt, full / "labels" / "train" / txt.name)
+            img_ext = png.suffix.lower()
             n_train += 1
     n_val = 0
     if VAL_REAL.exists():
@@ -278,14 +289,14 @@ def prepare_al_workspace(dataset_rel):
     names = list(cfg["COMPONENT_USD_MAP"].keys())
     (full / "dataset.yaml").write_text(
         yaml.safe_dump({"nc": len(names), "names": names}), encoding="utf-8")
-    return n_train, n_val, names
+    return n_train, n_val, names, img_ext
 
 
 def build_al_cmd(p):
     """Stage the dataset, write the AL parameters into the dataset's AAS
     (record mode), and return the run command."""
     rel = p.get("rel", "")
-    n_pool, n_val, names = prepare_al_workspace(rel)
+    n_pool, n_val, names, img_ext = prepare_al_workspace(rel)
 
     budget = int(p.get("initial_subset_size", 10)) + int(p.get("al_rounds", 3)) * int(p.get("add_per_round", 5))
     if budget > n_pool:
@@ -314,7 +325,7 @@ def build_al_cmd(p):
         "epochs_per_round": int(p.get("epochs_per_round", 10)),
         "batch_size": int(p.get("batch_size", 8)),
         "img_size": int(p.get("img_size", 640)),
-        "img_extension": ".png",
+        "img_extension": img_ext,
     })
     aas_path.write_text(json.dumps(data, indent=1), encoding="utf-8")
 
@@ -418,10 +429,10 @@ def list_datasets():
     if DATASETS.exists():
         for d in sorted(DATASETS.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
             if d.is_dir():
-                pngs = list(d.rglob("*.png"))
+                imgs = list(_iter_images(d))
                 out.append({
                     "name": d.name,
-                    "images": len(pngs),
+                    "images": len(imgs),
                     "modified": time.strftime("%Y-%m-%d %H:%M", time.localtime(d.stat().st_mtime)),
                     "rel": str(d.relative_to(ROOT)),
                 })
@@ -465,7 +476,7 @@ def list_results():
 
 def dataset_preview(rel, limit=12):
     d = _safe_path(rel)
-    return [str(p.relative_to(ROOT)) for p in sorted(d.rglob("*.png"))[:limit]]
+    return [str(p.relative_to(ROOT)) for p in sorted(_iter_images(d))[:limit]]
 
 
 # --- HTTP handler -----------------------------------------------------------------
@@ -560,6 +571,65 @@ class Handler(BaseHTTPRequestHandler):
             pts = sorted(f.name for f in OD_DIR.glob("*.pt"))
             return self._json(pts)
 
+        if route == "/api/harvests":
+            # List harvest folders (inference-time AL candidates) with counts.
+            out = []
+            if HARVEST_DIR.exists():
+                for d in sorted(HARVEST_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                    man = d / "harvest_manifest.json"
+                    if man.exists():
+                        m = json.loads(man.read_text())
+                        remaining = len(list((d / "images").glob("*.*"))) if (d / "images").exists() else 0
+                        out.append({"name": d.name, "kept": m.get("kept", 0),
+                                    "scored": m.get("scored", 0), "remaining": remaining,
+                                    "num_classes": m.get("num_classes", 9)})
+            return self._json(out)
+
+        if route == "/api/harvest_items":
+            d = HARVEST_DIR / Path(q["name"][0]).name
+            man = d / "harvest_manifest.json"
+            if not man.exists():
+                return self._json([])
+            items = json.loads(man.read_text()).get("items", [])
+            res = []
+            for it in items:
+                img = d / "images" / it["image"]
+                if img.exists():  # not yet accepted/rejected
+                    res.append({**it,
+                                "img": str(img.relative_to(ROOT)),
+                                "label": str((d / "labels" / (img.stem + ".txt")).relative_to(ROOT))})
+            return self._json(res)
+
+        if route == "/api/al_results":
+            # Per-round learning curves from every AL run (al_summary.csv),
+            # grouped by dataset -> the "what did AL gain me" overview.
+            import csv
+            out = []
+            al_output = AL_DIR / "output"
+            if al_output.exists():
+                for summary in al_output.rglob("al_summary.csv"):
+                    rows = []
+                    with open(summary, newline="") as f:
+                        for r in csv.DictReader(f):
+                            rows.append({
+                                "round": int(r["round"]),
+                                "strategy": r.get("strategy", "?"),
+                                "images": int(r["train_images"]),
+                                "map50": float(r["mAP50"]) if r["mAP50"] == r["mAP50"] else None,
+                                "map5095": float(r["mAP50_95"]) if r["mAP50_95"] == r["mAP50_95"] else None,
+                            })
+                    if rows:
+                        # gain = best mAP50 over rounds minus round-0 mAP50
+                        valid = [r["map50"] for r in rows if r["map50"] is not None]
+                        gain = (max(valid) - rows[0]["map50"]) if valid and rows[0]["map50"] is not None else None
+                        out.append({"dataset": summary.parent.name,
+                                    "strategy": rows[-1]["strategy"],
+                                    "rows": rows, "gain": gain,
+                                    "modified": time.strftime("%Y-%m-%d %H:%M",
+                                                              time.localtime(summary.stat().st_mtime))})
+            out.sort(key=lambda x: x["modified"], reverse=True)
+            return self._json(out)
+
         if route == "/api/preview":
             try:
                 return self._json(dataset_preview(q["rel"][0]))
@@ -653,6 +723,62 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
             ok, err = start_job("OD training", cmd, OD_DIR)
             return self._json({"ok": ok, "error": err})
+
+        if route == "/api/run_harvest":
+            model = payload.get("model", "")
+            mpath = (OD_DIR / Path(model).name) if model and not Path(model).is_absolute() else Path(model)
+            if not Path(mpath).exists():
+                # also look inside OD results for a best.pt by run name
+                cands = list(OD_DIR.rglob(Path(model).name)) if model else []
+                if cands:
+                    mpath = cands[0]
+            source = payload.get("source", "")
+            if not Path(source).is_dir():
+                return self._json({"ok": False, "error": f"source folder not found: {source}"}, 400)
+            if not Path(mpath).exists():
+                return self._json({"ok": False, "error": f"model not found: {model}"}, 400)
+            name = payload.get("out") or Path(source).name
+            python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
+            cmd = [python, "-X", "utf8", "harvest_from_inference.py",
+                   "--model", str(mpath), "--source", str(source), "--out", name,
+                   "--top", str(int(payload.get("top", 50))),
+                   "--conf", str(payload.get("conf", 0.10)),
+                   "--num_classes", str(int(payload.get("num_classes", 9)))]
+            ok, err = start_job(f"AL harvest ({name})", cmd, AL_DIR)
+            return self._json({"ok": ok, "error": err})
+
+        if route == "/api/harvest_review":
+            # accept -> move image + verified pre-label into a REAL_<name>
+            # dataset (usable for training/AL); reject -> delete the candidate.
+            try:
+                d = HARVEST_DIR / Path(payload["name"]).name
+                img_name = Path(payload["image"]).name
+                img = d / "images" / img_name
+                lbl = d / "labels" / (img.stem + ".txt")
+                if payload.get("action") == "accept":
+                    ds = DATASETS / f"REAL_{d.name}" / "Replicator"
+                    (ds.parent / "Replicator").mkdir(parents=True, exist_ok=True)
+                    shutil.move(str(img), ds / img_name)
+                    if lbl.exists():
+                        shutil.move(str(lbl), ds / (img.stem + ".txt"))
+                    return self._json({"ok": True, "dataset": f"REAL_{d.name}"})
+                else:
+                    img.unlink(missing_ok=True)
+                    lbl.unlink(missing_ok=True)
+                    return self._json({"ok": True})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+
+        if route == "/api/save_label":
+            # Persist edited YOLO label text for a harvest candidate.
+            try:
+                p = _safe_path(payload["label"])
+                if HARVEST_DIR.resolve() not in p.resolve().parents:
+                    raise ValueError("can only edit harvest labels")
+                p.write_text(payload.get("text", ""), encoding="utf-8")
+                return self._json({"ok": True})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
 
         if route == "/api/run_al":
             try:

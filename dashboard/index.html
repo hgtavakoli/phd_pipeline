@@ -60,6 +60,7 @@
   <button data-tab="console" onclick="showTab('console')">📟 Live Console</button>
   <button data-tab="datasets" onclick="showTab('datasets')">🖼 Datasets</button>
   <button data-tab="results" onclick="showTab('results')">🏋 Results</button>
+  <button data-tab="harvest" onclick="showTab('harvest')">🎯 AL Harvest (real)</button>
   <button data-tab="docs" onclick="showTab('docs')">📚 Docs &amp; Commands</button>
 </nav>
 
@@ -181,6 +182,11 @@
     The selected dataset becomes the unlabeled pool; validation runs on the <b>real</b> image set (sim-to-real).
     Per-round learning curve is written to <code>active_learning\output\&lt;dataset&gt;\al_summary.csv</code> —
     run once per strategy on the same dataset + seed for the ablation comparison.</p>
+
+    <h3 style="margin-top:18px">Gain overview — mAP50 vs labeled images
+      <button class="secondary" style="padding:4px 10px" onclick="loadAlResults()">⟳</button></h3>
+    <div id="alChart"></div>
+    <div id="alGainTable"></div>
   </div>
 
   <div class="card">
@@ -227,6 +233,30 @@
     </div>
     <table id="resTable"><thead><tr><th>Run</th><th>Weights</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
     <p class="muted" style="margin-top:8px">“Open” launches Windows Explorer at the run folder (weights, curves, confusion matrices…).</p>
+  </div>
+</div>
+
+<!-- ============ AL HARVEST ============ -->
+<div class="tab" id="tab-harvest">
+  <div class="card">
+    <h2>Harvest AL candidates from real images (inference-time)</h2>
+    <p class="muted">Run a trained model over a folder of <b>real, unlabeled</b> images. The most <b>uncertain</b> frames (where the model is least sure) are kept with the model's predictions as pre-labels — these are the most valuable real images to label next.</p>
+    <div class="row">
+      <div><label>Model (best.pt)</label><select id="hModel" style="min-width:200px"></select></div>
+      <div><label>Real images folder (absolute path)</label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:340px"></div>
+      <div><label>Keep top-N uncertain</label><input id="hTop" type="number" min="1" value="50" style="width:90px"></div>
+      <div><label>Conf threshold</label><input id="hConf" type="number" step="0.05" value="0.10" style="width:80px"></div>
+      <button class="primary" id="btnHarvest" onclick="runHarvest()">▶ Harvest</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">Review candidates</h2>
+      <div><label>Harvest</label><select id="hSel" onchange="loadHarvestItems()" style="min-width:240px"></select></div>
+      <button class="secondary" onclick="loadHarvests()">⟳</button>
+      <span class="muted">Predicted boxes shown. <b>Accept</b> → moves the image + verified labels into a <code>REAL_&lt;name&gt;</code> dataset (then trainable like any dataset). <b>Reject</b> → discards it. Refine boxes in any YOLO labeller — files are standard format.</span>
+    </div>
+    <div id="harvestGrid" class="thumbs"></div>
   </div>
 </div>
 
@@ -282,6 +312,78 @@ function showTab(name){
   document.querySelector(`nav button[data-tab=${name}]`).classList.add('active');
   if(name==='datasets') loadDatasets();
   if(name==='results') loadResults();
+  if(name==='harvest'){ loadHarvestModels(); loadHarvests(); }
+}
+
+// ---------- AL harvest (inference-time, real images) ----------
+function loadHarvestModels(){
+  fetch('/api/results').then(r=>r.json()).then(list=>{
+    const runs = list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
+    fetch('/api/weights').then(r=>r.json()).then(ws=>{
+      $('hModel').innerHTML = [...runs, ...ws].map(w=>`<option value="${w}">${w}</option>`).join('')
+        || '<option value="">— no models —</option>';
+    });
+  });
+}
+function loadHarvests(){
+  fetch('/api/harvests').then(r=>r.json()).then(list=>{
+    const cur=$('hSel').value;
+    $('hSel').innerHTML = list.map(h=>`<option value="${h.name}" ${h.name===cur?'selected':''}>${h.name} (${h.remaining} to review)</option>`).join('')
+      || '<option value="">— no harvests yet —</option>';
+    loadHarvestItems();
+  });
+}
+async function runHarvest(){
+  const p={model:$('hModel').value, source:$('hSource').value.trim(), top:+$('hTop').value, conf:+$('hConf').value, num_classes:COMPONENTS.length};
+  if(!p.source){alert('Enter the real-images folder path');return;}
+  const r=await post('/api/run_harvest',p);
+  if(!r.ok){alert(r.error);return;}
+  startConsole('AL harvest');
+}
+async function loadHarvestItems(){
+  const name=$('hSel').value;
+  if(!name){ $('harvestGrid').innerHTML='<p class="muted">No harvest selected.</p>'; return; }
+  const items=await fetch('/api/harvest_items?name='+encodeURIComponent(name)).then(r=>r.json());
+  if(!items.length){ $('harvestGrid').innerHTML='<p class="muted">Nothing left to review — all accepted or rejected.</p>'; return; }
+  $('harvestGrid').innerHTML='';
+  for(const it of items){
+    const cell=document.createElement('div');
+    cell.style.cssText='display:inline-block;margin:4px;text-align:center';
+    const cv=await drawCandidate(it);
+    cell.appendChild(cv);
+    cell.insertAdjacentHTML('beforeend',
+      `<div class="muted" style="font-size:.72rem">unc ${it.uncertainty} · ${it.boxes} boxes</div>
+       <button class="secondary" style="padding:3px 10px" onclick="reviewItem('${name}','${it.image}','accept',this)">✔ Accept</button>
+       <button class="danger" style="padding:3px 10px" onclick="reviewItem('${name}','${it.image}','reject',this)">✖ Reject</button>`);
+    $('harvestGrid').appendChild(cell);
+  }
+}
+async function drawCandidate(it){
+  const [img,lab]=await Promise.all([
+    new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src='/img?p='+encodeURIComponent(it.img);}),
+    fetch('/api/label?p='+encodeURIComponent(it.img)).then(r=>r.ok?r.text():'')]);
+  const cv=document.createElement('canvas');
+  if(!img){return cv;}
+  const scale=240/img.width; cv.width=img.width*scale; cv.height=img.height*scale;
+  cv.style.cssText='border-radius:6px;border:1px solid var(--border)';
+  const ctx=cv.getContext('2d'); ctx.drawImage(img,0,0,cv.width,cv.height);
+  ctx.lineWidth=1.5; ctx.font='10px Consolas';
+  for(const line of lab.trim().split('\n')){
+    const v=line.trim().split(/\s+/).map(Number);
+    if(v.length<5||isNaN(v[0]))continue;
+    const [c,cx,cy,w,h]=v;
+    const x=(cx-w/2)*cv.width,y=(cy-h/2)*cv.height;
+    ctx.strokeStyle=CLS_COLORS[c%CLS_COLORS.length];ctx.fillStyle=CLS_COLORS[c%CLS_COLORS.length];
+    ctx.strokeRect(x,y,w*cv.width,h*cv.height);
+    ctx.fillText(COMPONENTS[c]||c,x+1,y>10?y-2:y+9);
+  }
+  return cv;
+}
+async function reviewItem(name,image,action,btn){
+  const r=await post('/api/harvest_review',{name,image,action});
+  if(!r.ok){alert(r.error);return;}
+  btn.parentElement.remove();
+  if(action==='accept' && r.dataset) loadDatasets();
 }
 
 // ---------- component chips ----------
@@ -403,6 +505,7 @@ function loadAlDatasets(){
   });
 }
 loadAlDatasets();
+loadAlResults();
 async function runAl(){
   const rel = $('alDs').value;
   if(!rel){alert('Generate a dataset first');return;}
@@ -420,6 +523,41 @@ async function runAl(){
   const r = await post('/api/run_al', p);
   if(!r.ok){alert(r.error);return;}
   startConsole(`Active Learning (${p.strategy})`);
+}
+
+// ---------- AL gain overview (SVG line chart, mAP50 vs #images) ----------
+async function loadAlResults(){
+  const data = await fetch('/api/al_results').then(r=>r.json());
+  if(!data.length){ $('alChart').innerHTML = '<p class="muted">No AL runs yet.</p>'; $('alGainTable').innerHTML=''; return; }
+  const W=520, H=240, pad=42;
+  const allImgs = data.flatMap(d=>d.rows.map(r=>r.images));
+  const allMap  = data.flatMap(d=>d.rows.map(r=>r.map50).filter(v=>v!=null));
+  const xMax=Math.max(...allImgs,1), yMax=Math.max(...allMap,0.01);
+  const xS=i=>pad+(i/xMax)*(W-pad-10), yS=v=>H-pad-(v/yMax)*(H-pad-10);
+  const colors=['#76b900','#4da3ff','#ffc857','#ff5d5d','#b07cff'];
+  let svg=`<svg viewBox="0 0 ${W} ${H}" style="max-width:560px;background:#0a0d12;border:1px solid var(--border);border-radius:8px">`;
+  // axes
+  svg+=`<line x1="${pad}" y1="${H-pad}" x2="${W-10}" y2="${H-pad}" stroke="#2a3344"/>`;
+  svg+=`<line x1="${pad}" y1="10" x2="${pad}" y2="${H-pad}" stroke="#2a3344"/>`;
+  svg+=`<text x="${pad}" y="${H-pad+16}" fill="#9aa4b5" font-size="9">0</text>`;
+  svg+=`<text x="${W-30}" y="${H-pad+16}" fill="#9aa4b5" font-size="9">${xMax} imgs</text>`;
+  svg+=`<text x="6" y="16" fill="#9aa4b5" font-size="9">${yMax.toFixed(2)}</text>`;
+  svg+=`<text x="6" y="${H-pad}" fill="#9aa4b5" font-size="9">mAP50</text>`;
+  data.forEach((d,di)=>{
+    const c=colors[di%colors.length];
+    const pts=d.rows.filter(r=>r.map50!=null).map(r=>`${xS(r.images)},${yS(r.map50)}`).join(' ');
+    svg+=`<polyline points="${pts}" fill="none" stroke="${c}" stroke-width="2"/>`;
+    d.rows.filter(r=>r.map50!=null).forEach(r=>{svg+=`<circle cx="${xS(r.images)}" cy="${yS(r.map50)}" r="3" fill="${c}"/>`;});
+    svg+=`<text x="${W-150}" y="${20+di*14}" fill="${c}" font-size="10">■ ${d.dataset} (${d.strategy})</text>`;
+  });
+  svg+=`</svg>`;
+  $('alChart').innerHTML=svg;
+  $('alGainTable').innerHTML='<table><thead><tr><th>Dataset</th><th>Strategy</th><th>Rounds</th><th>Start mAP50</th><th>Best mAP50</th><th>Gain</th></tr></thead><tbody>'+
+    data.map(d=>{const s=d.rows[0].map50, b=Math.max(...d.rows.map(r=>r.map50||0));
+      return `<tr><td>${d.dataset}</td><td>${d.strategy}</td><td>${d.rows.length-1}</td>
+        <td>${s!=null?s.toFixed(4):'—'}</td><td>${b.toFixed(4)}</td>
+        <td style="color:${d.gain>0?'var(--accent)':'var(--text2)'}">${d.gain!=null?(d.gain>=0?'+':'')+d.gain.toFixed(4):'—'}</td></tr>`;}).join('')+
+    '</tbody></table>';
 }
 async function stopJob(){ if(confirm('Stop the running job?')) await post('/api/stop'); }
 
