@@ -252,12 +252,22 @@ def component_status(aas_path):
     return {"components": items, "registered": registered, "warning": warning}
 
 
-def prepare_al_workspace(dataset_rel):
+def list_dataset_cameras(dataset_rel):
+    """Camera-geometry subfolders inside a dataset (e.g. Replicator,
+    Replicator_01). Returns [] for flat datasets."""
+    d = _safe_path(dataset_rel)
+    cams = sorted({p.parent.name for p in _iter_images(d) if p.parent != d})
+    return cams
+
+
+def prepare_al_workspace(dataset_rel, camera=None):
     """Stage a generated dataset for active learning:
        active_learning/data/full-data/{images,labels}/{train,val}
-    train pool = all images of the chosen SDG dataset (the 'unlabeled' pool),
+    train pool = images of the chosen SDG dataset (the 'unlabeled' pool),
+                 restricted to one camera geometry if `camera` is given so the
+                 two camera datasets stay completely separate,
     val        = the real validation images (sim-to-real evaluation).
-    Returns (n_train_pool, n_val, class_names)."""
+    Returns (n_train_pool, n_val, class_names, img_ext)."""
     import yaml
     d = _safe_path(dataset_rel)
     if not d.is_dir():
@@ -270,6 +280,9 @@ def prepare_al_workspace(dataset_rel):
     n_train = 0
     img_ext = ".png"
     for png in _iter_images(d):
+        # camera filter: only images whose parent folder matches the chosen camera
+        if camera and camera != "both" and png.parent.name != camera:
+            continue
         txt = png.with_suffix(".txt")
         if txt.exists():
             shutil.copy2(png, full / "images" / "train" / png.name)
@@ -296,24 +309,29 @@ def build_al_cmd(p):
     """Stage the dataset, write the AL parameters into the dataset's AAS
     (record mode), and return the run command."""
     rel = p.get("rel", "")
-    n_pool, n_val, names, img_ext = prepare_al_workspace(rel)
+    camera = p.get("camera") or "both"
+    n_pool, n_val, names, img_ext = prepare_al_workspace(rel, camera)
+    if n_pool == 0:
+        raise ValueError(f"no labelled images for camera '{camera}' in this dataset.")
 
     budget = int(p.get("initial_subset_size", 10)) + int(p.get("al_rounds", 3)) * int(p.get("add_per_round", 5))
     if budget > n_pool:
         raise ValueError(f"budget too large: initial + rounds x add = {budget} images, "
-                         f"but the pool only has {n_pool}. Reduce rounds/budget or generate more data.")
+                         f"but the '{camera}' pool only has {n_pool}. Reduce rounds/budget or generate more data.")
 
     # the dataset AAS is the record — regenerate from the current template
     # (ensures the ActiveLearning section exists), then write the AL params
     aas_rel = generate_dataset_aas(rel)
     aas_path = AAS_DIR / aas_rel
     d = _safe_path(rel)
+    # keep each camera geometry's AL run separate so they compare independently
+    run_tag = d.name if camera == "both" else f"{d.name}__{camera}"
     data = json.loads(aas_path.read_text(encoding="utf-8-sig"))
-    weights = p.get("weights") or "yolo11n.pt"
+    weights = p.get("weights") or "yolov12l.pt"
     weights_path = (OD_DIR / Path(weights).name)
     _aas_set_properties(data, {
         "data_dir": str(AL_DIR / "data"),
-        "output_dir": str(AL_DIR / "output" / d.name),
+        "output_dir": str(AL_DIR / "output" / run_tag),
         "initial_model_path": str(weights_path),
         "dataset_yaml": str(AL_DIR / "data" / "full-data" / "dataset.yaml"),
         "num_classes": len(names),
@@ -599,6 +617,13 @@ class Handler(BaseHTTPRequestHandler):
                                 "img": str(img.relative_to(ROOT)),
                                 "label": str((d / "labels" / (img.stem + ".txt")).relative_to(ROOT))})
             return self._json(res)
+
+        if route == "/api/cameras":
+            # Camera-geometry subfolders of a dataset (for separate AL/training).
+            try:
+                return self._json(list_dataset_cameras(q["rel"][0]))
+            except Exception as e:
+                return self._json({"error": str(e)}, 400)
 
         if route == "/api/al_results":
             # Per-round learning curves from every AL run (al_summary.csv),

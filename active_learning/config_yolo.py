@@ -19,7 +19,7 @@ IMG_EXTENSION = ".jpg"
 ANN_EXTENSION = ".txt"
 
 # --- YOLO Model & Training Configuration ---
-INITIAL_MODEL = "C:/Users/hota02/Documents/SDG/active_learning/yolov12l.pt" # Pretrained model to start from
+INITIAL_MODEL = "../OD_training/yolov12l.pt" # Pretrained model to start from (YOLOv12, project default)
 EPOCHS_PER_ROUND = 5 # Number of epochs to train in each AL round
 BATCH_SIZE = 16
 IMG_SIZE = 640

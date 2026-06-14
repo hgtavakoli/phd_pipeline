@@ -43,12 +43,24 @@
   .thumbs{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
   .thumbs img{height:110px;border-radius:6px;border:1px solid var(--border)}
   .muted{color:var(--text2);font-size:.8rem}
+  .ib{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border-radius:50%;
+      border:1px solid var(--accent2);color:var(--accent2);font-size:10px;font-weight:700;cursor:pointer;
+      margin-left:5px;vertical-align:middle;user-select:none}
+  .ib:hover{background:var(--accent2);color:#000}
+  #infoPop{display:none;position:fixed;z-index:200;max-width:340px;background:var(--panel2);
+      border:1px solid var(--accent2);border-radius:8px;padding:12px 14px;font-size:.82rem;color:var(--text);
+      box-shadow:0 6px 24px rgba(0,0,0,.5)}
+  #infoPop .more{color:var(--accent2);cursor:pointer;font-size:.78rem;margin-top:6px;display:inline-block}
+  #infoPop .long{display:none;margin-top:8px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border);padding-top:8px}
   .cmdline{color:var(--accent);font-family:Consolas,monospace;font-size:.78rem;background:#0a0d12;border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:8px;white-space:pre-wrap;word-break:break-all}
   #docText{max-height:600px}
   .doclist button{margin:0 6px 6px 0}
 </style>
 </head>
 <body>
+
+<!-- ============ INFO POPOVER ============ -->
+<div id="infoPop"></div>
 
 <!-- ============ LABEL EDITOR MODAL ============ -->
 <div id="editorModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;align-items:center;justify-content:center">
@@ -78,6 +90,7 @@
   <button data-tab="console" onclick="showTab('console')">📟 Live Console</button>
   <button data-tab="datasets" onclick="showTab('datasets')">🖼 Datasets</button>
   <button data-tab="results" onclick="showTab('results')">🏋 Results</button>
+  <button data-tab="al" onclick="showTab('al')">🧠 Active Learning</button>
   <button data-tab="harvest" onclick="showTab('harvest')">🎯 AL Harvest (real)</button>
   <button data-tab="docs" onclick="showTab('docs')">📚 Docs &amp; Commands</button>
 </nav>
@@ -173,41 +186,6 @@
   </div>
 
   <div class="card">
-    <h2>Active Learning (PPAL)</h2>
-    <div class="row">
-      <div><label>Dataset (the unlabeled pool)</label><select id="alDs" style="min-width:300px"></select>
-        <button class="secondary" style="padding:5px 10px" title="Refresh dataset list" onclick="loadAlDatasets()">⟳</button></div>
-      <div><label>Strategy</label>
-        <select id="alStrategy">
-          <option value="ppal_feat" selected>ppal_feat — uncertainty + appearance-embedding diversity (recommended)</option>
-          <option value="ppal_box">ppal_box — uncertainty + box-geometry diversity (legacy)</option>
-          <option value="entropy">entropy — uncertainty only</option>
-          <option value="random">random — baseline</option>
-        </select></div>
-      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="alBalance" type="checkbox" checked> class-balance boost</label></div>
-    </div>
-    <div class="row">
-      <div><label>AL rounds</label><input id="alRounds" type="number" min="1" value="3" style="width:80px"></div>
-      <div><label>Initial subset</label><input id="alInit" type="number" min="1" value="10" style="width:80px"></div>
-      <div><label>Add per round</label><input id="alAdd" type="number" min="1" value="5" style="width:80px"></div>
-      <div><label>Epochs / round</label><input id="alEpochs" type="number" min="1" value="10" style="width:80px"></div>
-      <div><label>Batch</label><input id="alBatch" type="number" min="1" value="8" style="width:80px"></div>
-      <div><label>Image size</label><input id="alImgsz" type="number" min="64" value="640" style="width:90px"></div>
-      <div><label>Initial weights</label><select id="alWeights"></select></div>
-      <button class="primary" id="btnRunAl" onclick="runAl()">▶ Run AL experiment</button>
-    </div>
-    <p class="muted"><b>Record mode:</b> the chosen strategy and budget are saved into the dataset's AAS file.
-    The selected dataset becomes the unlabeled pool; validation runs on the <b>real</b> image set (sim-to-real).
-    Per-round learning curve is written to <code>active_learning\output\&lt;dataset&gt;\al_summary.csv</code> —
-    run once per strategy on the same dataset + seed for the ablation comparison.</p>
-
-    <h3 style="margin-top:18px">Gain overview — mAP50 vs labeled images
-      <button class="secondary" style="padding:4px 10px" onclick="loadAlResults()">⟳</button></h3>
-    <div id="alChart"></div>
-    <div id="alGainTable"></div>
-  </div>
-
-  <div class="card">
     <h2>Pipeline Self-Test</h2>
     <div class="row">
       <button class="secondary" id="btnTestQuick" onclick="runTest(false)">🧪 Quick test (~10 s, static checks)</button>
@@ -251,6 +229,47 @@
     </div>
     <table id="resTable"><thead><tr><th>Run</th><th>Weights</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
     <p class="muted" style="margin-top:8px">“Open” launches Windows Explorer at the run folder (weights, curves, confusion matrices…).</p>
+  </div>
+</div>
+
+<!-- ============ ACTIVE LEARNING ============ -->
+<div class="tab" id="tab-al">
+  <div class="card">
+    <h2>Active Learning experiment <span data-info="al_overview"></span></h2>
+    <p class="muted">Train a model on a small labelled subset, then let it pick the most useful images to label next, round by round — reaching high accuracy with fewer labels. Pick a generated dataset as the pool and compare strategies on the same data.</p>
+    <div class="row">
+      <div><label>Dataset = unlabeled pool <span data-info="al_dataset"></span></label><select id="alDs" onchange="loadAlCameras()" style="min-width:280px"></select>
+        <button class="secondary" style="padding:5px 10px" title="Refresh" onclick="loadAlDatasets()">⟳</button></div>
+      <div><label>Camera geometry <span data-info="al_camera"></span></label>
+        <select id="alCamera" style="min-width:160px"></select></div>
+      <div><label>Strategy <span data-info="al_strategy"></span></label>
+        <select id="alStrategy">
+          <option value="ppal_feat" selected>ppal_feat (recommended)</option>
+          <option value="ppal_box">ppal_box (legacy)</option>
+          <option value="entropy">entropy only</option>
+          <option value="random">random (baseline)</option>
+        </select></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="alBalance" type="checkbox" checked> class-balance <span data-info="al_balance"></span></label></div>
+    </div>
+    <div class="row">
+      <div><label>AL rounds <span data-info="al_rounds"></span></label><input id="alRounds" type="number" min="1" value="3" style="width:80px"></div>
+      <div><label>Initial subset <span data-info="al_init"></span></label><input id="alInit" type="number" min="1" value="10" style="width:80px"></div>
+      <div><label>Add per round <span data-info="al_add"></span></label><input id="alAdd" type="number" min="1" value="5" style="width:80px"></div>
+      <div><label>Epochs / round <span data-info="al_epochs"></span></label><input id="alEpochs" type="number" min="1" value="10" style="width:80px"></div>
+      <div><label>Batch <span data-info="al_batch"></span></label><input id="alBatch" type="number" min="1" value="8" style="width:80px"></div>
+      <div><label>Image size</label><input id="alImgsz" type="number" min="64" value="640" style="width:90px"></div>
+      <div><label>Initial weights <span data-info="al_weights"></span></label><select id="alWeights"></select></div>
+      <button class="primary" id="btnRunAl" onclick="runAl()">▶ Run AL experiment</button>
+    </div>
+    <p class="muted"><b>Record mode:</b> your choices are saved into the dataset's AAS. Validation runs on the <b>real</b> image set (sim-to-real). Each camera geometry runs and is logged separately so the two never mix.</p>
+  </div>
+
+  <div class="card">
+    <h2>Gain overview — mAP50 vs labelled images <span data-info="al_gain"></span>
+      <button class="secondary" style="padding:4px 10px" onclick="loadAlResults()">⟳</button></h2>
+    <p class="muted">Each line is one AL run (dataset + camera + strategy). Run the same dataset/camera with different strategies to see which reaches higher accuracy for the same number of labelled images.</p>
+    <div id="alChart"></div>
+    <div id="alGainTable"></div>
   </div>
 </div>
 
@@ -322,6 +341,30 @@ let COMPONENTS = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassi
 let COMP_ITEMS = COMPONENTS.map(n=>({name:n, available:true, reason:''}));
 const $ = id => document.getElementById(id);
 
+// ---------- info popovers (short hint + expandable read-more) ----------
+const INFO = {};  // key -> {short, long}
+function info(e, key){
+  e.stopPropagation();
+  const d = INFO[key] || {short:'(no description)', long:''};
+  const pop = $('infoPop');
+  pop.innerHTML = `<div>${d.short}</div>` +
+    (d.long ? `<span class="more" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Read more ▾</span><div class="long">${d.long}</div>` : '');
+  pop.style.display='block';
+  const r = e.target.getBoundingClientRect();
+  let left = r.left, top = r.bottom+6;
+  pop.style.left = Math.min(left, window.innerWidth-360)+'px';
+  pop.style.top = Math.min(top, window.innerHeight-120)+'px';
+}
+document.addEventListener('click', e=>{ if(!e.target.classList.contains('ib')) $('infoPop').style.display='none'; });
+function ib(key){ return `<span class="ib" onclick="info(event,'${key}')">i</span>`; }
+// inject info icons into elements marked with data-info after load
+function applyInfoIcons(){
+  document.querySelectorAll('[data-info]').forEach(el=>{
+    if(el.dataset.ibDone) return; el.dataset.ibDone='1';
+    el.insertAdjacentHTML('beforeend', ib(el.dataset.info));
+  });
+}
+
 // ---------- tabs ----------
 function showTab(name){
   document.querySelectorAll('.tab').forEach(t=>t.classList.remove('show'));
@@ -330,6 +373,7 @@ function showTab(name){
   document.querySelector(`nav button[data-tab=${name}]`).classList.add('active');
   if(name==='datasets') loadDatasets();
   if(name==='results') loadResults();
+  if(name==='al'){ loadAlDatasets(); loadAlResults(); }
   if(name==='harvest'){ loadHarvestModels(); loadHarvests(); }
 }
 
@@ -338,7 +382,8 @@ function loadHarvestModels(){
   fetch('/api/results').then(r=>r.json()).then(list=>{
     const runs = list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
     fetch('/api/weights').then(r=>r.json()).then(ws=>{
-      $('hModel').innerHTML = [...runs, ...ws].map(w=>`<option value="${w}">${w}</option>`).join('')
+      const all=[...runs, ...ws];
+      $('hModel').innerHTML = all.map(w=>`<option value="${w}" ${w.includes('v12')&&runs.length===0?'selected':''}>${w}</option>`).join('')
         || '<option value="">— no models —</option>';
     });
   });
@@ -601,7 +646,7 @@ async function runTrain(){
 }
 fetch('/api/weights').then(r=>r.json()).then(ws=>{
   $('tWeights').innerHTML += ws.map(w=>`<option value="${w}">${w}</option>`).join('');
-  $('alWeights').innerHTML = ws.map(w=>`<option value="${w}" ${w.includes('11n')?'selected':''}>${w}</option>`).join('');});
+  $('alWeights').innerHTML = ws.map(w=>`<option value="${w}" ${w.includes('v12')?'selected':''}>${w}</option>`).join('');});
 
 // ---------- active learning ----------
 function loadAlDatasets(){
@@ -610,15 +655,26 @@ function loadAlDatasets(){
     $('alDs').innerHTML = list.map(d=>
       `<option value="${d.rel.replace(/\\/g,'\\\\')}" ${d.rel===cur?'selected':''}>${d.name} (${d.images} imgs)</option>`).join('')
       || '<option value="">— no datasets, generate first —</option>';
+    loadAlCameras();
   });
 }
-loadAlDatasets();
-loadAlResults();
+function loadAlCameras(){
+  const rel=$('alDs').value; if(!rel){ $('alCamera').innerHTML=''; return; }
+  fetch('/api/cameras?rel='+encodeURIComponent(rel.replace(/\\\\/g,'\\'))).then(r=>r.json()).then(cams=>{
+    let opts='';
+    if(Array.isArray(cams) && cams.length){
+      cams.forEach(c=>{const lbl=c==='Replicator'?c+' (top-down)':c==='Replicator_01'?c+' (orbital)':c; opts+=`<option value="${c}">${lbl}</option>`;});
+      if(cams.length>1) opts+='<option value="both">both (merged)</option>';
+    } else opts='<option value="both">single set</option>';
+    $('alCamera').innerHTML=opts;
+  });
+}
 async function runAl(){
   const rel = $('alDs').value;
   if(!rel){alert('Generate a dataset first');return;}
   const p = {
     rel: rel.replace(/\\\\/g,'\\'),
+    camera: $('alCamera').value || 'both',
     strategy: $('alStrategy').value,
     class_balance: $('alBalance').checked,
     al_rounds: +$('alRounds').value, initial_subset_size: +$('alInit').value,
@@ -792,6 +848,37 @@ function loadAasList(){
 }
 loadAasList();
 fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').textContent='v'+v.trim());
+
+// ---------- info-button content (short hint + read-more) ----------
+Object.assign(INFO, {
+  al_overview:{short:'Active Learning labels fewer images for the same accuracy by letting the model choose what to label next.',
+    long:'Instead of labelling everything, you train on a small subset, then each round the trained model scores the remaining pool and the strategy selects the most informative images to add. Over a few rounds the accuracy curve usually rises faster than random labelling — so you reach a target mAP with far fewer labelled images. Here the pool is your synthetic dataset; validation is on real images to measure sim-to-real transfer.'},
+  al_dataset:{short:'The generated dataset whose images form the unlabelled pool to select from.',
+    long:'AL starts from this pool as if it were unlabelled and picks a subset each round. Generate a dataset in the Run tab first; bigger pools give the strategy more to choose from.'},
+  al_camera:{short:'Which camera geometry to use. The two cameras are kept completely separate.',
+    long:'SDG renders every scene from two cameras: Replicator (fixed top-down) and Replicator_01 (random orbital). These are different viewpoints, so a model trained on one should be evaluated on that geometry. Pick one camera to run and compare them independently; "both" merges them (not recommended when you want a per-geometry comparison). Each choice is logged under its own run so the gain curves never mix.'},
+  al_strategy:{short:'How the next images are chosen each round.',
+    long:'random = pick uniformly (the baseline every method must beat). entropy = pick where the model is least confident (uncertainty only). ppal_box = uncertainty + diversity by bounding-box geometry. ppal_feat = uncertainty + diversity by appearance embeddings from the detector (recommended — avoids selecting many look-alike images). Run each on the same dataset+camera to produce the comparison.'},
+  al_balance:{short:'Boosts images containing classes that are still rare in the labelled set.',
+    long:'Real pools are often class-imbalanced. With this on, images that contain under-represented classes get a selection bonus, so the labelled set fills in rare classes faster.'},
+  al_rounds:{short:'How many selection+training cycles to run after the initial training.',
+    long:'Each round selects new images, adds them to the labelled set, and retrains. More rounds = a longer learning curve but more GPU time.'},
+  al_init:{short:'How many images to label and train on before the first selection.',
+    long:'The seed set for round 0. Too small and the first model is too weak to score the pool well; a few dozen is typical.'},
+  al_add:{short:'How many new images the strategy adds each round (the labelling budget).',
+    long:'Smaller increments give a finer learning curve; larger ones finish sooner. initial + rounds×add must not exceed the pool size.'},
+  al_epochs:{short:'Training epochs per round.',
+    long:'More epochs per round = better-fitted models but slower. For quick experiments 3–10; for real results 50+.'},
+  al_batch:{short:'Images per training step.',
+    long:'Larger = faster but more GPU memory. On an 8 GB RTX 2080, 8–16 at 640px with YOLOv12-L is safe; use -1 to let Ultralytics auto-fit.'},
+  al_weights:{short:'Starting weights for round 0 (default: YOLOv12).',
+    long:'The pretrained checkpoint the first round fine-tunes from. YOLOv12-L is the project default; a smaller model trains faster for quick tests.'},
+  al_gain:{short:'The payoff: accuracy vs number of labelled images, per run.',
+    long:'Each line is one AL run. The gain column is best mAP50 minus the round-0 mAP50. Compare a strategy line against the random baseline at the same number of labelled images: the gap is what AL bought you. Compare the two camera geometries as separate lines.'},
+});
+applyInfoIcons();
+const _origShowTab = showTab;
+showTab = function(n){ _origShowTab(n); applyInfoIcons(); };
 </script>
 </body>
 </html>
