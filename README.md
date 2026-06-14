@@ -155,6 +155,22 @@ each one does and *why* these values):
 > small batch (e.g. 20 samples), inspect images + FINAL DATASET SUMMARY, and
 > record the change in [CHANGELOG.md](CHANGELOG.md) before scaling up.
 
+## Where datasets and results are stored
+
+All datasets appear in the dashboard **Datasets** tab and live on disk at:
+
+| What | Path | Naming |
+|---|---|---|
+| Synthetic dataset (SDG) | `SmartSDG/Datasets/yolo_experiments/<name>/` | `MULTI_…` / `SINGLE_…` |
+| Real dataset (accepted from AL harvest) | `SmartSDG/Datasets/yolo_experiments/REAL_<harvest>/` | `REAL_…` prefix |
+| Raw SDG render (pre-conversion) | `SmartSDG/Datasets/unified_render_output/<name>/` | — |
+| Harvest candidates (pending review) | `active_learning/harvest/<name>/{images,labels}` | — |
+| AL run outputs + learning curve | `active_learning/output/<dataset>/` (`al_summary.csv`) | — |
+| OD training runs (weights, curves) | `OD_training/results/yolo_run/exp{0,1,2}/<dataset>/` | exp0=void,1=plane,2=3D |
+
+Label files are editable in-browser (✏ Edit on any thumbnail) or in any
+external YOLO labeller — they are standard `class cx cy w h` format.
+
 ## Self-test — run after every change
 
 ```bat
