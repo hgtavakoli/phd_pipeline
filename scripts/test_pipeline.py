@@ -116,7 +116,11 @@ def t_compile():
     files = [SMARTSDG / "main.py", SMARTSDG / "src" / "generation.py",
              SMARTSDG / "src" / "yolo_converter.py", SMARTSDG / "src" / "config_process.py",
              SMARTSDG / "src" / "config_loader.py", OD_DIR / "main.py",
-             ROOT / "dashboard" / "server.py"]
+             ROOT / "dashboard" / "server.py",
+             ROOT / "active_learning" / "utils_yolo.py",
+             ROOT / "active_learning" / "main_yolo.py",
+             ROOT / "active_learning" / "run_al_from_aas.py",
+             ROOT / "active_learning" / "harvest_from_inference.py"]
     r = subprocess.run([str(TRAIN_PYTHON), "-m", "py_compile"] + [str(f) for f in files],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr.strip()
@@ -195,6 +199,19 @@ print("ROUTING_OK")
                        capture_output=True, text=True)
     assert "ROUTING_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
     return "5 dataset-name patterns route to the correct exp folder"
+
+
+def t_al_strategies():
+    """AL selection module imports and exposes the expected strategy helpers."""
+    r = subprocess.run([str(TRAIN_PYTHON), "-c",
+                        "import sys; sys.path.insert(0, r'%s'); import utils_yolo as u; "
+                        "assert all(hasattr(u, f) for f in "
+                        "['get_images_for_next_round','_diversity_features','_diversity_box',"
+                        "'_uncertainty_scores','count_labeled_classes'])"
+                        % (AL_DIR := ROOT / 'active_learning')],
+                       capture_output=True, text=True)
+    assert r.returncode == 0, (r.stderr or "").strip()[-300:]
+    return "random/entropy/ppal_box/ppal_feat + class-balance present"
 
 
 # ======================================================================
@@ -308,6 +325,7 @@ def main():
     check("python modules compile", t_compile)
     check("converter quality filters (synthetic)", t_converter_filters)
     check("exp-folder routing", t_exp_routing)
+    check("AL strategies importable", t_al_strategies)
 
     if args.full:
         print("=" * 64)
