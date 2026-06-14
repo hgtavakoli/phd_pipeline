@@ -50,6 +50,24 @@
 </head>
 <body>
 
+<!-- ============ LABEL EDITOR MODAL ============ -->
+<div id="editorModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;align-items:center;justify-content:center">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;max-width:95vw;max-height:95vh;overflow:auto">
+    <div class="row" style="align-items:center;margin-bottom:8px">
+      <strong id="edTitle" style="color:var(--text)">Edit labels</strong>
+      <div><label>Class for new boxes</label><select id="edClass"></select></div>
+      <span class="muted">Drag empty area = new box · click box = select · drag inside = move · drag corner = resize · Del = delete selected</span>
+    </div>
+    <canvas id="edCanvas" style="border:1px solid var(--border);cursor:crosshair;background:#000;max-width:90vw"></canvas>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="editorSave()">💾 Save labels</button>
+      <button class="danger" onclick="editorDeleteSelected()">🗑 Delete selected box</button>
+      <button class="secondary" onclick="closeEditor()">Cancel</button>
+      <span id="edMsg" class="muted"></span>
+    </div>
+  </div>
+</div>
+
 <header>
   <h1>🧪 SmartSDG Pipeline</h1><span class="ver" id="verChip">v2</span>
   <span id="statusBadge">idle</span>
@@ -353,8 +371,9 @@ async function loadHarvestItems(){
     cell.appendChild(cv);
     cell.insertAdjacentHTML('beforeend',
       `<div class="muted" style="font-size:.72rem">unc ${it.uncertainty} · ${it.boxes} boxes</div>
-       <button class="secondary" style="padding:3px 10px" onclick="reviewItem('${name}','${it.image}','accept',this)">✔ Accept</button>
-       <button class="danger" style="padding:3px 10px" onclick="reviewItem('${name}','${it.image}','reject',this)">✖ Reject</button>`);
+       <button class="secondary" style="padding:3px 8px" onclick="openEditor('${it.img.replace(/\\/g,'\\\\')}','${it.label.replace(/\\/g,'\\\\')}',loadHarvestItems)">✏ Edit</button>
+       <button class="secondary" style="padding:3px 8px" onclick="reviewItem('${name}','${it.image}','accept',this)">✔ Accept</button>
+       <button class="danger" style="padding:3px 8px" onclick="reviewItem('${name}','${it.image}','reject',this)">✖ Reject</button>`);
     $('harvestGrid').appendChild(cell);
   }
 }
@@ -384,6 +403,95 @@ async function reviewItem(name,image,action,btn){
   if(!r.ok){alert(r.error);return;}
   btn.parentElement.remove();
   if(action==='accept' && r.dataset) loadDatasets();
+}
+
+// ================= LABEL EDITOR =================
+const ED = {img:null, boxes:[], sel:-1, labelRel:null, onSave:null, drag:null, scale:1};
+function openEditor(imgRel, labelRel, onSave){
+  ED.labelRel = labelRel; ED.onSave = onSave; ED.sel = -1; ED.boxes = [];
+  $('edClass').innerHTML = COMPONENTS.map((n,i)=>`<option value="${i}">${i}: ${n}</option>`).join('');
+  $('edTitle').textContent = 'Edit labels — ' + imgRel.split(/[\\/]/).pop();
+  Promise.all([
+    new Promise(r=>{const i=new Image();i.onload=()=>r(i);i.onerror=()=>r(null);i.src='/img?p='+encodeURIComponent(imgRel);}),
+    fetch('/api/label?p='+encodeURIComponent(imgRel)).then(r=>r.ok?r.text():'')
+  ]).then(([img,txt])=>{
+    ED.img=img;
+    for(const line of txt.trim().split('\n')){
+      const v=line.trim().split(/\s+/).map(Number);
+      if(v.length>=5&&!isNaN(v[0])) ED.boxes.push({cls:v[0],cx:v[1],cy:v[2],w:v[3],h:v[4]});
+    }
+    const cv=$('edCanvas'), maxW=Math.min(window.innerWidth*0.9, 1100);
+    ED.scale = img ? Math.min(maxW/img.width, (window.innerHeight*0.7)/img.height) : 1;
+    cv.width = img? img.width*ED.scale : 640; cv.height = img? img.height*ED.scale : 480;
+    drawEditor();
+    $('editorModal').style.display='flex';
+  });
+}
+function closeEditor(){ $('editorModal').style.display='none'; ED.img=null; }
+function drawEditor(){
+  const cv=$('edCanvas'), ctx=cv.getContext('2d');
+  ctx.clearRect(0,0,cv.width,cv.height);
+  if(ED.img) ctx.drawImage(ED.img,0,0,cv.width,cv.height);
+  ED.boxes.forEach((b,i)=>{
+    const x=(b.cx-b.w/2)*cv.width, y=(b.cy-b.h/2)*cv.height, w=b.w*cv.width, h=b.h*cv.height;
+    ctx.lineWidth=i===ED.sel?2.5:1.5;
+    ctx.strokeStyle=CLS_COLORS[b.cls%CLS_COLORS.length]; ctx.fillStyle=ctx.strokeStyle;
+    ctx.strokeRect(x,y,w,h);
+    ctx.font='11px Consolas'; ctx.fillText(COMPONENTS[b.cls]||b.cls, x+2, y>12?y-2:y+10);
+    if(i===ED.sel){ ctx.fillRect(x+w-5,y+h-5,8,8); } // resize handle
+  });
+}
+function evtXY(e){ const r=$('edCanvas').getBoundingClientRect(); return {x:e.clientX-r.left, y:e.clientY-r.top}; }
+function hitBox(px,py){
+  const cv=$('edCanvas');
+  for(let i=ED.boxes.length-1;i>=0;i--){ const b=ED.boxes[i];
+    const x=(b.cx-b.w/2)*cv.width, y=(b.cy-b.h/2)*cv.height, w=b.w*cv.width, h=b.h*cv.height;
+    if(px>=x&&px<=x+w&&py>=y&&py<=y+h){
+      const handle = (px>=x+w-7&&py>=y+h-7);
+      return {i, handle};
+    }
+  }
+  return null;
+}
+$('edCanvas').addEventListener('mousedown',e=>{
+  const {x,y}=evtXY(e), cv=$('edCanvas'), hit=hitBox(x,y);
+  if(hit){ ED.sel=hit.i; ED.drag={mode:hit.handle?'resize':'move', sx:x, sy:y, box:{...ED.boxes[hit.i]}}; }
+  else { // start new box
+    ED.sel=ED.boxes.length;
+    ED.boxes.push({cls:+$('edClass').value, cx:x/cv.width, cy:y/cv.height, w:0, h:0});
+    ED.drag={mode:'new', sx:x, sy:y};
+  }
+  drawEditor();
+});
+$('edCanvas').addEventListener('mousemove',e=>{
+  if(!ED.drag) return;
+  const {x,y}=evtXY(e), cv=$('edCanvas'), b=ED.boxes[ED.sel];
+  if(ED.drag.mode==='new'){
+    const x0=ED.drag.sx, y0=ED.drag.sy;
+    b.cx=((x0+x)/2)/cv.width; b.cy=((y0+y)/2)/cv.height;
+    b.w=Math.abs(x-x0)/cv.width; b.h=Math.abs(y-y0)/cv.height;
+  } else if(ED.drag.mode==='move'){
+    b.cx=ED.drag.box.cx+(x-ED.drag.sx)/cv.width;
+    b.cy=ED.drag.box.cy+(y-ED.drag.sy)/cv.height;
+  } else if(ED.drag.mode==='resize'){
+    b.w=Math.max(0.005, ED.drag.box.w+2*((x-ED.drag.sx)/cv.width));
+    b.h=Math.max(0.005, ED.drag.box.h+2*((y-ED.drag.sy)/cv.height));
+  }
+  drawEditor();
+});
+window.addEventListener('mouseup',()=>{
+  if(ED.drag&&ED.drag.mode==='new'&&ED.boxes[ED.sel]&&ED.boxes[ED.sel].w<0.01){ ED.boxes.splice(ED.sel,1); ED.sel=-1; drawEditor(); }
+  ED.drag=null;
+});
+$('edClass').addEventListener('change',()=>{ if(ED.sel>=0&&ED.boxes[ED.sel]){ ED.boxes[ED.sel].cls=+$('edClass').value; drawEditor(); }});
+document.addEventListener('keydown',e=>{ if($('editorModal').style.display==='flex'&&(e.key==='Delete'||e.key==='Backspace')) editorDeleteSelected(); });
+function editorDeleteSelected(){ if(ED.sel>=0){ ED.boxes.splice(ED.sel,1); ED.sel=-1; drawEditor(); } }
+async function editorSave(){
+  const txt = ED.boxes.filter(b=>b.w>0.002&&b.h>0.002)
+    .map(b=>`${b.cls} ${b.cx.toFixed(6)} ${b.cy.toFixed(6)} ${b.w.toFixed(6)} ${b.h.toFixed(6)}`).join('\n');
+  const r=await post('/api/save_label',{label:ED.labelRel, text:txt});
+  if(!r.ok){alert(r.error);return;}
+  $('edMsg').textContent='Saved ✔'; setTimeout(()=>{ $('edMsg').textContent=''; closeEditor(); if(ED.onSave)ED.onSave(); },500);
 }
 
 // ---------- component chips ----------
@@ -630,16 +738,22 @@ async function preview(rel,name){
     <div class="muted" id="legend"></div>`;
   $('legend').innerHTML = COMPONENTS.map((n,i)=>`<span style="color:${CLS_COLORS[i%CLS_COLORS.length]}">■ ${n}</span>`).join(' &nbsp; ');
   for(const p of imgs){
-    if($('showBoxes').checked) await drawThumb(p);
-    else $('thumbBox').insertAdjacentHTML('beforeend', `<img src="/img?p=${encodeURIComponent(p)}" title="${p}">`);
+    const wrap=document.createElement('div');
+    wrap.style.cssText='display:inline-block;text-align:center;margin:2px';
+    if($('showBoxes').checked){ const cv=await makeThumb(p); if(cv) wrap.appendChild(cv); }
+    else wrap.insertAdjacentHTML('beforeend', `<img src="/img?p=${encodeURIComponent(p)}" title="${p}">`);
+    const labelRel = p.replace(/\.(png|jpg|jpeg)$/i,'.txt');
+    wrap.insertAdjacentHTML('beforeend',
+      `<br><button class="secondary" style="padding:2px 8px;font-size:.72rem" onclick="openEditor('${p.replace(/\\/g,'\\\\')}','${labelRel.replace(/\\/g,'\\\\')}',()=>preview('${rel.replace(/\\/g,'\\\\')}','${name}'))">✏ Edit labels</button>`);
+    $('thumbBox').appendChild(wrap);
   }
 }
-async function drawThumb(p){
+async function makeThumb(p){
   const [img, labelTxt] = await Promise.all([
     new Promise(res=>{const i=new Image(); i.onload=()=>res(i); i.onerror=()=>res(null); i.src='/img?p='+encodeURIComponent(p);}),
     fetch('/api/label?p='+encodeURIComponent(p)).then(r=>r.ok?r.text():''),
   ]);
-  if(!img) return;
+  if(!img) return null;
   const scale = 220/img.width;
   const cv = document.createElement('canvas');
   cv.width = img.width*scale; cv.height = img.height*scale;
@@ -656,7 +770,7 @@ async function drawThumb(p){
     ctx.strokeRect(x,y,bw,bh);
     ctx.fillText(COMPONENTS[c]||c, x+1, y>10?y-2:y+9);
   }
-  $('thumbBox').appendChild(cv);
+  return cv;
 }
 async function openPath(rel){ const r = await post('/api/open',{rel}); if(!r.ok) alert(r.error); }
 

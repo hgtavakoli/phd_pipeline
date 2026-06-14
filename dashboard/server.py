@@ -770,11 +770,15 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
 
         if route == "/api/save_label":
-            # Persist edited YOLO label text for a harvest candidate.
+            # Persist edited YOLO label text. Allowed only for harvest
+            # candidates and dataset label files (never outside the project).
             try:
                 p = _safe_path(payload["label"])
-                if HARVEST_DIR.resolve() not in p.resolve().parents:
-                    raise ValueError("can only edit harvest labels")
+                parents = p.resolve().parents
+                allowed = (HARVEST_DIR.resolve() in parents) or (DATASETS.resolve() in parents)
+                if not allowed:
+                    raise ValueError("can only edit harvest or dataset labels")
+                p.parent.mkdir(parents=True, exist_ok=True)
                 p.write_text(payload.get("text", ""), encoding="utf-8")
                 return self._json({"ok": True})
             except Exception as e:
