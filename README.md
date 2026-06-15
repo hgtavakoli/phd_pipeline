@@ -1,7 +1,8 @@
 # SmartSDG Pipeline — v2 (Working Copy)
 
 > **Author:** Hooman Tavakoli Ghinani
-> **Version:** 2.1.0 — see [CHANGELOG.md](CHANGELOG.md)
+> **Version:** 2.2.0 — see [CHANGELOG.md](CHANGELOG.md)
+> **Status:** all five stages dashboard-integrated; every action recorded in AAS (per-dataset records + a factory `pipeline_history` event log, IEC 63278).
 > **Frozen reference:** the original, validated v1 lives untouched at `C:\Users\hota02\Documents\SDG\` — never modify it.
 
 End-to-end research pipeline: **Synthetic Data Generation (NVIDIA Isaac Sim) → YOLO dataset → Object Detection training → Active Learning → Continual Learning → Live Inference**, all driven by AAS (Asset Administration Shell, IEC 63278) configurations.
@@ -191,6 +192,7 @@ test artifacts are cleaned up automatically.
 |---|---|
 | [docs/GUIDE.md](docs/GUIDE.md) | **Comprehensive user guide** — every step & dashboard control, examples, troubleshooting, glossary (start here) |
 | [docs/CONFIG.md](docs/CONFIG.md) | Configuration layout — pipeline.yaml defaults, the registry, AAS records, machine paths |
+| [docs/AAS_SCHEMA.md](docs/AAS_SCHEMA.md) | AAS schema (IEC 63278): per-dataset records + factory pipeline-history log, for modular cross-module integration |
 | [docs/ACTIVE_LEARNING.md](docs/ACTIVE_LEARNING.md) | Active Learning explained: strategies, cameras, gain overview |
 | [docs/CONTINUAL_LEARNING.md](docs/CONTINUAL_LEARNING.md) | Continual Learning: class-incremental, replay, generate-if-missing, CL vs retrain |
 | [docs/PORTABILITY.md](docs/PORTABILITY.md) | Running on another machine; path config; Docker scope |

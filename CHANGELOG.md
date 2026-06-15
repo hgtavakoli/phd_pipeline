@@ -4,6 +4,25 @@ All notable changes to this pipeline are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com). Record **every**
 hyperparameter change — SDG results are highly sensitive to them.
 
+## [2.2.0] — 2026-06-15
+
+Major feature wave (all dashboard-integrated, self-test 10/10):
+- **Live inference** tab (webcam/video MJPEG); pipeline tabs reordered
+  SDG→Training→Inference→AL; info (ⓘ) buttons across every control; full PDF
+  user guide with real screenshots.
+- **Portability**: machine paths resolved via config_paths.py (env >
+  pipeline_config.json > auto-detect); Docker for the Python stages.
+- **Master config** `pipeline.yaml` — single source of cross-stage defaults, read
+  live by the dashboard.
+- **Continual Learning** fully integrated (⑤ tab): replay class-incremental, new
+  classes appended, model's known classes derived from dataset name / sidecar.
+- **AAS as the canonical record (A–E):** per-dataset AAS now stores generation
+  parameters + training/AL/CL configs + outcome metrics + append-only RunHistory;
+  a factory-wide `AAS/pipeline_history.json` (Submodel PipelineHistory) logs every
+  action with session/task tags incl. inference/harvest events; all AAS files
+  validated as IEC 63278 Environments (self-test check); docs/AAS_SCHEMA.md.
+- Added CLAUDE.md (project memory) to reduce re-exploration cost.
+
 ## [2.1.0] — 2026-06-11
 
 Code cleanup of `SmartSDG/` (no behavior change; smoke-tested: 3 samples,
