@@ -104,6 +104,7 @@
   <button data-tab="sdg" class="active" onclick="showTab('sdg')">① SDG</button>
   <button data-tab="train" onclick="showTab('train')">② Training</button>
   <button data-tab="harvest" onclick="showTab('harvest')">③ Inference</button>
+  <button data-tab="live" onclick="showTab('live')">🎥 Live</button>
   <button data-tab="al" onclick="showTab('al')">④ Active Learning</button>
   <span style="width:1px;background:var(--border);margin:6px 8px"></span>
   <button data-tab="console" onclick="showTab('console')">📟 Console</button>
@@ -251,6 +252,32 @@
     </div>
     <table id="resTable"><thead><tr><th>Run</th><th>Weights</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
     <p class="muted" style="margin-top:8px">“Open” launches Windows Explorer at the run folder (weights, curves, confusion matrices…).</p>
+  </div>
+</div>
+
+<!-- ============ 🎥 LIVE INFERENCE ============ -->
+<div class="tab" id="tab-live">
+  <div class="card">
+    <h2>🎥 Live Inference — webcam or video <span data-info="live_overview"></span></h2>
+    <p class="muted">Run a trained detector in real time on a camera feed or a video file, with boxes drawn live in the dashboard. Use it to demo or sanity-check a model on real input.</p>
+    <div class="row">
+      <div><label>Model (best.pt) <span data-info="live_model"></span></label><select id="lvModel" style="min-width:240px"></select></div>
+      <div><label>Source <span data-info="live_source"></span></label>
+        <select id="lvSourceType" onchange="lvToggleSource()">
+          <option value="webcam">Webcam</option>
+          <option value="video">Video file</option>
+        </select></div>
+      <div id="lvWebcamBox"><label>Camera</label>
+        <select id="lvCam"><option value="0">0 (default)</option></select>
+        <button class="secondary" style="padding:5px 10px" onclick="lvProbeCams()">detect</button></div>
+      <div id="lvVideoBox" style="display:none"><label>Video file path</label><input id="lvVideo" type="text" placeholder="C:\path\to\video.mp4" style="width:280px">
+        <button class="secondary" style="padding:5px 10px" onclick="openVideoPicker()">📁</button></div>
+      <div><label>Conf <span data-info="live_conf"></span></label><input id="lvConf" type="number" step="0.05" value="0.25" style="width:80px"></div>
+      <button class="primary" id="btnLive" onclick="lvStart()">▶ Start</button>
+      <button class="danger" onclick="lvStop()">■ Stop</button>
+    </div>
+    <div id="lvView" style="margin-top:12px"></div>
+    <p class="muted">Tip: the camera is opened by the dashboard server (this machine). For best speed use a smaller model and lower resolution. Stop releases the camera.</p>
   </div>
 </div>
 
@@ -403,7 +430,39 @@ function showTab(name){
   if(name==='results') loadResults();
   if(name==='al'){ loadAlDatasets(); loadAlResults(); }
   if(name==='harvest'){ loadHarvestModels(); loadHarvests(); }
+  if(name==='live') loadLiveModels();
+  if(name!=='live') lvStop();
 }
+
+// ---------- live inference (webcam / video MJPEG) ----------
+function loadLiveModels(){
+  fetch('/api/results').then(r=>r.json()).then(list=>{
+    const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
+    fetch('/api/weights').then(r=>r.json()).then(ws=>{
+      $('lvModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— no models —</option>';
+    });
+  });
+}
+function lvToggleSource(){
+  const v=$('lvSourceType').value;
+  $('lvWebcamBox').style.display = v==='webcam'?'':'none';
+  $('lvVideoBox').style.display = v==='video'?'':'none';
+}
+function lvProbeCams(){
+  fetch('/api/cameras_available').then(r=>r.json()).then(d=>{
+    if(d.indices && d.indices.length){ $('lvCam').innerHTML=d.indices.map(i=>`<option value="${i}">${i}</option>`).join(''); }
+    else alert('No webcam detected (indices 0–3).');
+  });
+}
+function lvStart(){
+  const model=$('lvModel').value;
+  if(!model){alert('Pick a model');return;}
+  const src = $('lvSourceType').value==='webcam' ? $('lvCam').value : $('lvVideo').value.trim();
+  if($('lvSourceType').value==='video' && !src){alert('Pick a video file');return;}
+  const url='/stream?model='+encodeURIComponent(model)+'&source='+encodeURIComponent(src)+'&conf='+(+$('lvConf').value)+'&t='+Date.now();
+  $('lvView').innerHTML=`<img src="${url}" style="max-width:100%;border:1px solid var(--border);border-radius:8px" onerror="$('lvView').innerHTML='<p class=muted>Could not open the source (camera in use, or bad path).</p>'">`;
+}
+function lvStop(){ const v=$('lvView'); if(v){ v.innerHTML=''; } }
 
 // ---------- AL harvest (inference-time, real images) ----------
 function loadHarvestModels(){
@@ -425,8 +484,9 @@ function loadHarvests(){
   });
 }
 // ---------- folder picker (server-side filesystem browser) ----------
-let fpCurrent = "";
-function openFolderPicker(){ $('folderModal').style.display='flex'; fpBrowse($('hSource').value.trim() || ""); }
+let fpCurrent = "", fpTarget = 'hSource', fpWantFile = false;
+function openFolderPicker(){ fpTarget='hSource'; fpWantFile=false; $('folderModal').style.display='flex'; fpBrowse($('hSource').value.trim() || ""); }
+function openFolderPickerFor(inputId){ fpTarget=inputId; fpWantFile=false; $('folderModal').style.display='flex'; fpBrowse(($(inputId).value||'').replace(/[^\\\/]*$/,'')); }
 async function fpBrowse(path){
   const d = await fetch('/api/listdir?path='+encodeURIComponent(path)).then(r=>r.json());
   if(d.error){ alert(d.error); return; }
@@ -435,14 +495,17 @@ async function fpBrowse(path){
   let html = '';
   if(d.parent!==null) html += `<div class="fpEntry" onclick="fpBrowse('${(d.parent||'').replace(/\\/g,'\\\\')}')" style="cursor:pointer;padding:4px 6px">⬆ ..</div>`;
   html += d.dirs.map(dir=>`<div class="fpEntry" onclick="fpBrowse('${dir.replace(/\\/g,'\\\\')}')" style="cursor:pointer;padding:4px 6px">📁 ${dir.split(/[\\/]/).pop()||dir}</div>`).join('');
-  $('fpList').innerHTML = html || '<div class="muted">No subfolders.</div>';
-  $('fpImgs').textContent = d.path ? `${d.images} image(s) directly in this folder` : '';
+  if(fpWantFile) html += (d.files||[]).map(f=>`<div class="fpEntry" onclick="fpPickFile('${f.replace(/\\/g,'\\\\')}')" style="cursor:pointer;padding:4px 6px;color:var(--accent2)">🎞 ${f.split(/[\\/]/).pop()}</div>`).join('');
+  $('fpList').innerHTML = html || '<div class="muted">Empty.</div>';
+  $('fpImgs').textContent = d.path ? `${d.images} image(s)` + (fpWantFile?` · ${(d.files||[]).length} video(s)`:'') + ' in this folder' : '';
 }
 function fpUse(){
   if(!fpCurrent){ alert('Navigate into a folder first'); return; }
-  $('hSource').value = fpCurrent;
+  $(fpTarget).value = fpCurrent;
   $('folderModal').style.display='none';
 }
+function fpPickFile(path){ $(fpTarget).value = path; $('folderModal').style.display='none'; }
+function openVideoPicker(){ fpTarget='lvVideo'; fpWantFile=true; $('folderModal').style.display='flex'; fpBrowse(($('lvVideo').value||'').replace(/[^\\\/]*$/,'')); }
 
 async function runHarvest(){
   const p={model:$('hModel').value, source:$('hSource').value.trim(), top:+$('hTop').value, conf:+$('hConf').value, num_classes:COMPONENTS.length};
@@ -988,6 +1051,15 @@ Object.assign(INFO, {
     long:'The labelling budget for this harvest. Smaller = only the very hardest frames; larger = more candidates to review.'},
   inf_conf:{short:'Detection confidence threshold during scoring.',
     long:'Boxes below this confidence are ignored when computing uncertainty. Lower catches more tentative detections (more uncertainty signal).'},
+  // ----- Live inference -----
+  live_overview:{guide:'GUIDE.md', short:'Run a trained detector live on a webcam or video, with boxes drawn in real time.',
+    long:'The dashboard server opens the camera/video on this machine, runs the model on each frame, and streams the annotated result to the browser. Use it to demo a model or sanity-check it on real input. It shares the GPU, so avoid running it during a training job.'},
+  live_model:{short:'The trained detector to run (any best.pt from Results, or a base weight).',
+    long:'Pick a model trained on your data. Smaller models run faster for smooth real-time video.'},
+  live_source:{short:'Webcam (a camera index) or a video file on this machine.',
+    long:'Webcam = a connected camera (use "detect" to find available indices 0–3). Video = browse to an .mp4/.avi/.mov/.mkv file; it plays through once with detections.'},
+  live_conf:{short:'Minimum confidence to draw a detection box.',
+    long:'Higher shows only confident detections (cleaner); lower shows more tentative ones. 0.25 is a good default for viewing.'},
 });
 applyInfoIcons();
 const _origShowTab = showTab;

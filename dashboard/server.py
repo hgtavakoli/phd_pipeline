@@ -61,6 +61,13 @@ def _iter_images(folder):
 _job_lock = threading.Lock()
 _job = None  # dict: name, cmd_str, proc, lines, started, returncode
 
+# Live MJPEG stream: only one camera/video stream at a time. Starting a new
+# stream bumps the token so the previous loop exits and releases its capture
+# before the new one opens — concurrent camera opens hard-crash on Windows.
+_stream_lock = threading.Lock()
+_stream_token = 0
+_stream_active = False
+
 
 def _reader(job):
     """Pump subprocess output into the in-memory log buffer."""
@@ -528,6 +535,91 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _mjpeg_stream(self, q):
+        """Stream annotated detections as MJPEG (multipart/x-mixed-replace) from
+        a webcam index or a video file. The browser drives it via an <img> tag;
+        clearing the img src closes the socket and releases the capture.
+
+        Single-stream guarded: starting a new stream bumps _stream_token so any
+        previous loop exits and releases its camera before this one opens."""
+        global _stream_token, _stream_active
+        try:
+            import cv2
+            from ultralytics import YOLO
+        except Exception as e:
+            self.send_error(500, f"opencv/ultralytics unavailable: {e}")
+            return
+
+        model_arg = q.get("model", [""])[0]
+        source = q.get("source", ["0"])[0]
+        conf = float(q.get("conf", ["0.25"])[0])
+
+        mpath = (OD_DIR / Path(model_arg).name) if model_arg and not Path(model_arg).is_absolute() else Path(model_arg)
+        if not Path(mpath).exists():
+            cands = list(OD_DIR.rglob(Path(model_arg).name)) if model_arg else []
+            mpath = cands[0] if cands else mpath
+        if not Path(mpath).exists():
+            self.send_error(400, f"model not found: {model_arg}")
+            return
+
+        # become the active stream; signal any previous one to stop, then wait
+        # for it to release the device before we open it.
+        with _stream_lock:
+            _stream_token += 1
+            my_token = _stream_token
+        for _ in range(20):
+            if not _stream_active:
+                break
+            time.sleep(0.05)
+
+        cap_src = int(source) if source.isdigit() else source
+        cap = cv2.VideoCapture(cap_src, getattr(cv2, "CAP_DSHOW", 0) if isinstance(cap_src, int) else 0)
+        if not cap or not cap.isOpened():
+            self.send_error(400, f"could not open source: {source}")
+            return
+
+        model = YOLO(str(mpath))
+        is_webcam = isinstance(cap_src, int)
+        _stream_active = True
+        self.send_response(200)
+        self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+        self.send_header("Cache-Control", "no-cache")
+        self.end_headers()
+        try:
+            # DirectShow webcams often return empty first frames; warm up.
+            warm = 0
+            while is_webcam and warm < 30:
+                ok0, _ = cap.read()
+                if ok0:
+                    break
+                warm += 1
+                time.sleep(0.05)
+            misses = 0
+            while my_token == _stream_token:   # a newer stream ends this loop
+                ok, frame = cap.read()
+                if not ok:
+                    if is_webcam and misses < 20:
+                        misses += 1
+                        time.sleep(0.03)
+                        continue
+                    break  # end of video file, or camera gone
+                misses = 0
+                res = model.predict(frame, conf=conf, verbose=False)[0]
+                annotated = res.plot()  # BGR ndarray with boxes drawn
+                ok2, jpg = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
+                if not ok2:
+                    continue
+                self.wfile.write(b"--frame\r\nContent-Type: image/jpeg\r\n"
+                                 b"Content-Length: " + str(len(jpg)).encode() + b"\r\n\r\n")
+                self.wfile.write(jpg.tobytes())
+                self.wfile.write(b"\r\n")
+        except (BrokenPipeError, ConnectionResetError, OSError):
+            pass  # browser stopped the stream
+        finally:
+            cap.release()
+            if my_token == _stream_token:
+                _stream_active = False
+
     # ---- GET ----
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
@@ -536,6 +628,26 @@ class Handler(BaseHTTPRequestHandler):
 
         if route in ("/", "/index.html"):
             return self._file(DASH_DIR / "index.html", "text/html; charset=utf-8")
+
+        if route == "/stream":
+            return self._mjpeg_stream(q)
+
+        if route == "/api/cameras_available":
+            # Probe webcam indices 0..3. Refuse while a stream holds a camera —
+            # a second open of the same device hard-crashes on Windows.
+            if _stream_active:
+                return self._json({"indices": [], "note": "stop the live stream first"})
+            found = []
+            try:
+                import cv2
+                for i in range(4):
+                    cap = cv2.VideoCapture(i, getattr(cv2, "CAP_DSHOW", 0))
+                    if cap is not None and cap.isOpened():
+                        found.append(i)
+                        cap.release()
+            except Exception as e:
+                return self._json({"error": str(e), "indices": []})
+            return self._json({"indices": found})
 
         if route == "/api/status":
             j = _job
@@ -635,17 +747,21 @@ class Handler(BaseHTTPRequestHandler):
                 p = Path(raw)
                 if not p.is_dir():
                     return self._json({"error": "not a directory"}, 400)
-                dirs, n_imgs = [], 0
+                dirs, files, n_imgs = [], [], 0
+                vid_exts = (".mp4", ".avi", ".mov", ".mkv", ".webm")
                 for entry in sorted(p.iterdir(), key=lambda x: x.name.lower()):
                     try:
                         if entry.is_dir():
                             dirs.append(str(entry))
-                        elif entry.suffix.lower() in IMG_EXTS:
-                            n_imgs += 1
+                        else:
+                            if entry.suffix.lower() in IMG_EXTS:
+                                n_imgs += 1
+                            if entry.suffix.lower() in vid_exts:
+                                files.append(str(entry))
                     except OSError:
                         continue
                 return self._json({"path": str(p), "parent": str(p.parent) if p.parent != p else None,
-                                   "dirs": dirs, "images": n_imgs})
+                                   "dirs": dirs, "files": files, "images": n_imgs})
             except Exception as e:
                 return self._json({"error": str(e)}, 400)
 
