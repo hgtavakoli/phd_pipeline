@@ -371,6 +371,51 @@ def _registry_classes():
     return list(cfg["COMPONENT_USD_MAP"].keys())
 
 
+def _classes_from_dataset_name(name, registry):
+    """Parse the component classes encoded in an SDG dataset folder name, e.g.
+    'SINGLE_BlackCabin_Medium_plane' -> ['BlackCabin'],
+    'MULTI_GlueGun-BLid-BTrailer_Medium_withenv' -> ['GlueGun','BLid','BTrailer'],
+    'MULTI_ALL_CLASSES_Medium_plane' -> the full registry. Unknown -> []."""
+    LIGHT = {"Low", "Medium", "High"}
+    parts = name.split("_")
+    if not parts or parts[0] not in ("SINGLE", "MULTI", "REAL"):
+        return []
+    li = next((i for i, p in enumerate(parts) if p in LIGHT), None)
+    if li is None:
+        return []
+    seg = "_".join(parts[1:li])
+    if seg in ("ALL_CLASSES", "ALL"):
+        return list(registry)
+    return [c for c in seg.split("-") if c in registry]
+
+
+def _model_trained_classes(model_arg, registry):
+    """Best-effort list of classes a model was trained on:
+       1. a sidecar trained_classes.json next to the weights (authoritative), else
+       2. parse the dataset folder name from the model path, else
+       3. [] (nothing grayed -> all selectable, the safe default)."""
+    if not model_arg:
+        return []
+    mpath = (OD_DIR / Path(model_arg).name) if not Path(model_arg).is_absolute() else Path(model_arg)
+    if not mpath.exists():
+        cands = list(OD_DIR.rglob(Path(model_arg).name))
+        mpath = cands[0] if cands else mpath
+    # 1. sidecar (written by CL / training when known)
+    for cand in [mpath.parent / "trained_classes.json", mpath.parent.parent / "trained_classes.json"]:
+        if cand.exists():
+            try:
+                names = json.loads(cand.read_text())
+                return [c for c in names if c in registry]
+            except Exception:
+                pass
+    # 2. dataset name in the path
+    for part in Path(model_arg).parts:
+        classes = _classes_from_dataset_name(part, registry)
+        if classes:
+            return classes
+    return []
+
+
 def _stage_cl_split(dataset_rel, keep_global_ids, remap, out_dir, camera=None):
     """Copy a dataset's image+label pairs into out_dir, keeping only labels whose
     GLOBAL class id is in keep_global_ids. If remap is given (dict global->local),
@@ -922,24 +967,16 @@ class Handler(BaseHTTPRequestHandler):
             return self._json({"registry": _registry_classes()})
 
         if route == "/api/model_classes":
-            # Class names a trained model already knows (so the CL tab can gray
-            # them out — only NEW classes should be selectable to add).
+            # Classes a trained model actually saw (so the CL tab can gray them
+            # out — only NEW classes should be selectable). The checkpoint's
+            # model.names is unreliable (Ultralytics stores the full registry),
+            # so we derive the classes from the dataset folder name encoded in
+            # the model's path (SINGLE_<comp>_..., MULTI_<a-b-c>_..., REAL_...),
+            # falling back to a sidecar trained_classes.json if present.
             model = q.get("model", [""])[0]
-            mpath = (OD_DIR / Path(model).name) if model and not Path(model).is_absolute() else Path(model)
-            if not Path(mpath).exists():
-                cands = list(OD_DIR.rglob(Path(model).name)) if model else []
-                mpath = cands[0] if cands else mpath
-            if not Path(mpath).exists():
-                return self._json({"names": [], "error": "model not found"})
-            try:
-                import torch
-                ckpt = torch.load(str(mpath), map_location="cpu", weights_only=False)
-                m = ckpt.get("model") if isinstance(ckpt, dict) else ckpt
-                names = getattr(m, "names", None) or {}
-                known = list(names.values()) if isinstance(names, dict) else list(names)
-                return self._json({"names": known})
-            except Exception as e:
-                return self._json({"names": [], "error": str(e)})
+            registry = _registry_classes()
+            known = _model_trained_classes(model, registry)
+            return self._json({"names": known})
 
         if route == "/api/cameras":
             # Camera-geometry subfolders of a dataset (for separate AL/training).

@@ -144,6 +144,15 @@ def run_incremental_step(args):
 
         # --- 6. Report the Final Model Path ---
         final_model_path = Path(args.output_dir) / args.exp_name / "weights" / "best.pt"
+        # Record exactly which classes this model now knows (current + new), so
+        # the dashboard can gray them out when this model is reused for CL.
+        try:
+            import json as _json
+            (final_model_path.parent).mkdir(parents=True, exist_ok=True)
+            (final_model_path.parent / "trained_classes.json").write_text(
+                _json.dumps(all_class_names), encoding="utf-8")
+        except Exception:
+            pass
         if not final_model_path.exists():
             print(f"\n⚠️ WARNING: Could not find the final 'best.pt' model in the primary expected path.")
             print(f"   Please check the directory '{Path(args.output_dir) / args.exp_name}' for outputs.")
