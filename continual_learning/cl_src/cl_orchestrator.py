@@ -103,6 +103,12 @@ def run_incremental_step(args):
         )
 
         # --- 4. Create the data.yaml file for validation and metadata ---
+        # If no validation set was provided, validate on the merged training set
+        # (new + replay) rather than writing an empty val path, which crashes
+        # Ultralytics (get_img_files receives None).
+        if not val_data_path_str:
+            val_data_path_str = str(training_data_dir)
+            print("  - INFO: no validation set provided; validating on the merged train set.")
         data_yaml_content = {
             'train': str(training_data_dir),
             'val': val_data_path_str,

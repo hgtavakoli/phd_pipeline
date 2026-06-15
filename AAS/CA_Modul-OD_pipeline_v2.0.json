@@ -57357,6 +57357,97 @@
         }
        ],
        "modelType": "SubmodelElementList"
+      },
+      {
+       "idShort": "ContinualLearning",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "cl_strategy",
+         "valueType": "xs:string",
+         "value": "replay",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "input_model",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "current_classes",
+         "valueType": "xs:string",
+         "value": "Ylid, YTrailer, Cabin, GlueGun, BLid, BTrailer, FChassis, Rchassis, BlackCabin",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "new_classes",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "new_data_dir",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "replay_data_dir",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "val_new_data_dir",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "val_replay_data_dir",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "replay_ratio",
+         "valueType": "xs:float",
+         "value": "0.3",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "epochs",
+         "valueType": "xs:integer",
+         "value": "50",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "batch_size",
+         "valueType": "xs:integer",
+         "value": "8",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "img_size",
+         "valueType": "xs:integer",
+         "value": "640",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "output_dir",
+         "valueType": "xs:string",
+         "value": "./results/cl_runs",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "exp_name",
+         "valueType": "xs:string",
+         "value": "cl_step",
+         "modelType": "Property"
+        }
+       ]
       }
      ]
     },

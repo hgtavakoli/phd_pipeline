@@ -191,6 +191,8 @@ test artifacts are cleaned up automatically.
 |---|---|
 | [docs/GUIDE.md](docs/GUIDE.md) | **Comprehensive user guide** — every step & dashboard control, examples, troubleshooting, glossary (start here) |
 | [docs/ACTIVE_LEARNING.md](docs/ACTIVE_LEARNING.md) | Active Learning explained: strategies, cameras, gain overview |
+| [docs/CONTINUAL_LEARNING.md](docs/CONTINUAL_LEARNING.md) | Continual Learning: class-incremental, replay, generate-if-missing, CL vs retrain |
+| [docs/PORTABILITY.md](docs/PORTABILITY.md) | Running on another machine; path config; Docker scope |
 | [docs/INSTALL.md](docs/INSTALL.md) | Isaac Sim + Python environment setup |
 | [docs/PIPELINE.md](docs/PIPELINE.md) | Deep technical walkthrough of all 7 stages |
 | [docs/HYPERPARAMETERS.md](docs/HYPERPARAMETERS.md) | Every SDG parameter: meaning, effect, validated value |

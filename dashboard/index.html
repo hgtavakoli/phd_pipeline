@@ -106,6 +106,7 @@
   <button data-tab="harvest" onclick="showTab('harvest')">③ Inference</button>
   <button data-tab="live" onclick="showTab('live')">🎥 Live</button>
   <button data-tab="al" onclick="showTab('al')">④ Active Learning</button>
+  <button data-tab="cl" onclick="showTab('cl')">⑤ Continual Learning</button>
   <span style="width:1px;background:var(--border);margin:6px 8px"></span>
   <button data-tab="console" onclick="showTab('console')">📟 Console</button>
   <button data-tab="datasets" onclick="showTab('datasets')">🖼 Datasets</button>
@@ -322,6 +323,50 @@
   </div>
 </div>
 
+<!-- ============ ⑤ CONTINUAL LEARNING ============ -->
+<div class="tab" id="tab-cl">
+  <div class="card">
+    <h2>⑤ Continual Learning — add new classes without forgetting <span data-info="cl_overview"></span></h2>
+    <p class="muted">Teach an existing model a <b>new object class</b> while keeping what it already knows (class-incremental). Uses replay of old-class images mixed into each batch to prevent catastrophic forgetting.</p>
+    <div class="row">
+      <div><label>Base model to extend <span data-info="cl_model"></span></label><select id="clModel" style="min-width:260px"></select></div>
+      <div><label>Strategy <span data-info="cl_strategy"></span></label>
+        <select id="clStrategy"><option value="replay" selected>replay (balanced rehearsal)</option></select></div>
+      <div><label>Replay ratio <span data-info="cl_replay"></span></label><input id="clRatio" type="number" step="0.05" min="0" max="0.9" value="0.3" style="width:80px"></div>
+    </div>
+    <div class="row">
+      <div><label>New class(es) to add <span data-info="cl_newclass"></span></label>
+        <div class="chips" id="clNewClasses"></div></div>
+    </div>
+    <div class="row">
+      <div><label>New-class data <span data-info="cl_newdata"></span></label>
+        <select id="clNewData" style="min-width:240px"></select>
+        <button class="secondary" style="padding:5px 10px" onclick="clLoadDatasets()">⟳</button></div>
+      <div><label>&nbsp;</label><span id="clNewDataStatus" class="muted"></span></div>
+    </div>
+    <div class="row">
+      <div><label>Replay data (old classes) <span data-info="cl_replaydata"></span></label>
+        <select id="clReplayData" style="min-width:240px"></select></div>
+      <div><label>Camera <span data-info="cl_camera"></span></label><select id="clCamera"><option value="both">both</option><option>Replicator</option><option>Replicator_01</option></select></div>
+    </div>
+    <div class="row">
+      <div><label>Epochs <span data-info="cl_epochs"></span></label><input id="clEpochs" type="number" min="1" value="50" style="width:80px"></div>
+      <div><label>Batch <span data-info="cl_batch"></span></label><input id="clBatch" type="number" min="1" value="8" style="width:80px"></div>
+      <div><label>Image size</label><input id="clImgsz" type="number" min="64" value="640" style="width:90px"></div>
+      <button class="primary" id="btnRunCl" onclick="runCl()">▶ Run CL step</button>
+    </div>
+    <p class="muted" id="clPlan"></p>
+    <p class="muted"><b>If the new-class data isn't in the pool yet</b>, the dashboard offers to generate it first (SDG) and then run CL. The model's class list is extended and written back to the dataset's AAS (record mode).</p>
+  </div>
+
+  <div class="card">
+    <h2>CL overview &amp; comparison <span data-info="cl_overview2"></span>
+      <button class="secondary" style="padding:4px 10px" onclick="loadClResults()">⟳</button></h2>
+    <p class="muted">Each CL run with its final accuracy and cost. Compare a CL step against full retraining (Results tab) to weigh accuracy vs time/resources.</p>
+    <table id="clTable"><thead><tr><th>Run</th><th>Epochs</th><th>mAP50</th><th>mAP50-95</th><th>Weights</th><th>When</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+</div>
+
 <!-- ============ AL HARVEST ============ -->
 <div class="tab" id="tab-harvest">
   <div class="card">
@@ -357,6 +402,7 @@
       <button class="secondary" onclick="loadDoc('README.md')">README</button>
       <button class="secondary" onclick="loadDoc('HYPERPARAMETERS.md')">Hyperparameters</button>
       <button class="secondary" onclick="loadDoc('ACTIVE_LEARNING.md')">Active Learning guide</button>
+      <button class="secondary" onclick="loadDoc('CONTINUAL_LEARNING.md')">Continual Learning guide</button>
       <button class="secondary" onclick="loadDoc('INSTALL.md')">Install</button>
       <button class="secondary" onclick="loadDoc('PIPELINE.md')">Pipeline</button>
       <button class="secondary" onclick="loadDoc('CHANGELOG.md')">Changelog</button>
@@ -433,6 +479,72 @@ function showTab(name){
   if(name==='harvest'){ loadHarvestModels(); loadHarvests(); }
   if(name==='live') loadLiveModels();
   if(name!=='live') lvStop();
+  if(name==='cl'){ clInit(); }
+}
+
+// ---------- continual learning ----------
+let CL_DATASETS = [];
+function clInit(){
+  $('clNewClasses').innerHTML = COMPONENTS.map(c=>
+    `<label class="chips" style="display:inline-flex"><input type="checkbox" class="clNew" value="${c}" onchange="clUpdatePlan()"> ${c}</label>`).join('');
+  // models from results
+  fetch('/api/results').then(r=>r.json()).then(list=>{
+    const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
+    fetch('/api/weights').then(r=>r.json()).then(ws=>{
+      $('clModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— train a model first —</option>';
+    });
+  });
+  clLoadDatasets();
+  loadClResults();
+}
+function clLoadDatasets(){
+  fetch('/api/datasets').then(r=>r.json()).then(list=>{
+    CL_DATASETS=list;
+    const opts='<option value="">— select —</option>'+list.map(d=>`<option value="${d.rel.replace(/\\/g,'\\\\')}">${d.name} (${d.images})</option>`).join('');
+    $('clNewData').innerHTML=opts; $('clReplayData').innerHTML=opts;
+    clUpdatePlan();
+  });
+}
+function clNewSelected(){ return [...document.querySelectorAll('.clNew:checked')].map(c=>c.value); }
+function clUpdatePlan(){
+  const nc=clNewSelected();
+  if(!nc.length){ $('clPlan').textContent=''; $('clNewDataStatus').textContent=''; return; }
+  // does any dataset contain the new class name?
+  const match = CL_DATASETS.find(d=>nc.some(c=>d.name.includes(c)));
+  if(match){ $('clNewDataStatus').innerHTML=`<span style="color:var(--accent)">✓ pool has '${match.name}' for these classes</span>`;
+    if(!$('clNewData').value) $('clNewData').value=match.rel.replace(/\\/g,'\\\\'); }
+  else { $('clNewDataStatus').innerHTML=`<span style="color:var(--yellow)">no dataset for ${nc.join(', ')} in the pool — generate it first (SDG tab) or use Generate below</span>`; }
+  $('clPlan').textContent=`Plan: extend the model with [${nc.join(', ')}], replaying old classes to avoid forgetting.`;
+}
+async function runCl(){
+  const nc=clNewSelected();
+  if(!nc.length){alert('Select at least one new class');return;}
+  if(!$('clModel').value){alert('Select a base model');return;}
+  if(!$('clNewData').value){
+    if(confirm(`No new-class dataset selected. Generate one for [${nc.join(', ')}] now in the SDG tab?\n(Generate it, then come back and run CL.)`)){
+      showTab('sdg');
+    }
+    return;
+  }
+  const p={
+    model_weights:$('clModel').value, new_classes:nc,
+    new_data_rel:$('clNewData').value.replace(/\\\\/g,'\\'),
+    replay_data_rel:$('clReplayData').value? $('clReplayData').value.replace(/\\\\/g,'\\'):'',
+    camera:$('clCamera').value, replay_ratio:+$('clRatio').value,
+    epochs:+$('clEpochs').value, batch_size:+$('clBatch').value, img_size:+$('clImgsz').value,
+  };
+  if(!confirm(`Run CL: add [${nc.join(', ')}] to the model, ${p.epochs} epochs, replay ratio ${p.replay_ratio}. Continue?`)) return;
+  const r=await post('/api/run_cl',p);
+  if(!r.ok){alert(r.error);return;}
+  startConsole('Continual Learning');
+}
+async function loadClResults(){
+  const list=await fetch('/api/cl_results').then(r=>r.json());
+  $('clTable').querySelector('tbody').innerHTML = list.map(d=>
+    `<tr><td>${d.name}</td><td>${d.epochs}</td><td>${d.map50!=null?d.map50.toFixed(4):'—'}</td>
+     <td>${d.map5095!=null?d.map5095.toFixed(4):'—'}</td><td>${d.weights?'✔':'—'}</td><td>${d.modified}</td>
+     <td><button class="secondary" onclick="openPath('${d.rel.replace(/\\/g,'\\\\')}')">Open</button></td></tr>`).join('')
+    || '<tr><td colspan="7" class="muted">No CL runs yet.</td></tr>';
 }
 
 // ---------- live inference (webcam / video MJPEG) ----------
@@ -864,6 +976,7 @@ async function pollStatus(){
     $('btnRunSdg').disabled = s.running; $('btnRunTrain').disabled = s.running;
     $('btnTestQuick').disabled = s.running; $('btnTestFull').disabled = s.running;
     $('btnRunAl').disabled = s.running;
+    if($('btnRunCl')) $('btnRunCl').disabled = s.running;
     if(s.running){ b.textContent = `⏳ ${s.name} — ${Math.floor(s.elapsed/60)}m ${s.elapsed%60}s`; b.className='run'; if(!polling) polling=setInterval(pollLogs,1000);}
     else if(s.name){ b.textContent = s.returncode===0 ? `✔ ${s.name} finished` : `✖ ${s.name} exited (${s.returncode})`; b.className = s.returncode===0?'ok':'err'; }
     else { b.textContent='idle'; b.className=''; }
@@ -1063,6 +1176,27 @@ Object.assign(INFO, {
     long:'Webcam = a connected camera (use "detect" to find available indices 0–3). Video = browse to an .mp4/.avi/.mov/.mkv file; it plays through once with detections.'},
   live_conf:{short:'Minimum confidence to draw a detection box.',
     long:'Higher shows only confident detections (cleaner); lower shows more tentative ones. 0.25 is a good default for viewing.'},
+  // ----- Continual learning -----
+  cl_overview:{guide:'CONTINUAL_LEARNING.md', short:'Add a new object class to a trained model without retraining from scratch and without forgetting old classes.',
+    long:'Class-incremental learning: starting from an existing model, you teach it new class(es) using their images, while mixing in (replaying) old-class images each batch so the model does not forget what it already knew (catastrophic forgetting). Cheaper than full retraining and the standard way to grow a detector over time.'},
+  cl_model:{short:'The trained model to extend (its current classes are kept).',
+    long:'Pick a best.pt from the Results tab. The new classes are appended after this model\'s existing classes (their global IDs continue from where the model left off).'},
+  cl_strategy:{guide:'CONTINUAL_LEARNING.md', short:'How forgetting is prevented. "replay" = rehearse old-class images.',
+    long:'replay (rehearsal) mixes a fixed fraction of old-class images into every batch — a strong, standard baseline. Knowledge-distillation strategies (distilling the frozen old model) are the SOTA next step and can be added here later.'},
+  cl_replay:{short:'Fraction of each batch that is old-class (replay) data.',
+    long:'e.g. 0.3 = 30% old, 70% new per batch. Higher protects old classes more but learns the new one slower. 0.2–0.4 is typical.'},
+  cl_newclass:{short:'Which class(es) the model should learn in this step.',
+    long:'Tick the new component(s). They are appended to the model as new classes; their labels are remapped automatically so the global class IDs stay consistent with the rest of the pipeline.'},
+  cl_newdata:{guide:'CONTINUAL_LEARNING.md', short:'Dataset containing the new class images. Auto-matched from the pool by name.',
+    long:'If a generated dataset for the new class exists in the pool it is selected automatically. If not, generate one in the SDG tab first (Run CL will offer to take you there). Only labels of the selected new classes are used.'},
+  cl_replaydata:{short:'Dataset of the OLD classes to rehearse (prevents forgetting).',
+    long:'Usually the synthetic dataset the model was originally trained on. Its old-class labels are mixed into batches at the replay ratio. Optional but strongly recommended.'},
+  cl_camera:{short:'Camera geometry filter for the staged data (keeps geometries separate).',
+    long:'Match the geometry the base model was trained on. "both" uses all images.'},
+  cl_epochs:{short:'Training epochs for this incremental step.', long:'Fewer than full training is usually enough since the model already knows most of the task. 30–50 typical.'},
+  cl_batch:{short:'Batch size (split into new + replay by the ratio).', long:'On 8 GB GPU use 8–16 at 640px.'},
+  cl_overview2:{guide:'CONTINUAL_LEARNING.md', short:'Final accuracy and cost of each CL run, for comparison with full retraining.',
+    long:'Compare a CL step (here) against training a fresh model on all classes (Results tab) — CL is far cheaper in time/data but verify it keeps the old-class accuracy. The console prints the batch composition and timing per run.'},
 });
 applyInfoIcons();
 const _origShowTab = showTab;

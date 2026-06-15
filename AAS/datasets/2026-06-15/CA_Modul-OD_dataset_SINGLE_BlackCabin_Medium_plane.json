@@ -57063,7 +57063,7 @@
         {
          "idShort": "base_data_dir",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\SmartSDG\\Datasets\\yolo_experiments\\MULTI_GlueGun_Medium_plane\\",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\SmartSDG\\Datasets\\yolo_experiments\\SINGLE_BlackCabin_Medium_plane\\",
          "modelType": "Property"
         },
         {
@@ -57119,7 +57119,7 @@
         {
          "idShort": "exp_names_to_train",
          "valueType": "xs:string",
-         "value": "MULTI_GlueGun_Medium_plane",
+         "value": "SINGLE_BlackCabin_Medium_plane",
          "modelType": "Property"
         },
         {
@@ -57149,13 +57149,13 @@
         {
          "idShort": "img_size",
          "valueType": "xs:string",
-         "value": "640",
+         "value": "320",
          "modelType": "Property"
         },
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "7",
+         "value": "4",
          "modelType": "Property"
         },
         {
@@ -57174,13 +57174,13 @@
         {
          "idShort": "img_size",
          "valueType": "xs:string",
-         "value": "640",
+         "value": "320",
          "modelType": "Property"
         },
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "7",
+         "value": "4",
          "modelType": "Property"
         },
         {
@@ -57223,20 +57223,17 @@
           {
            "idShort": "data_dir",
            "valueType": "xs:string",
-           "modelType": "Property",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\data"
+           "modelType": "Property"
           },
           {
            "idShort": "output_dir",
            "valueType": "xs:string",
-           "modelType": "Property",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\output\\MULTI_GlueGun_Medium_plane"
+           "modelType": "Property"
           },
           {
            "idShort": "initial_model_path",
            "valueType": "xs:string",
-           "modelType": "Property",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\yolov12l.pt"
+           "modelType": "Property"
           }
          ],
          "modelType": "SubmodelElementList"
@@ -57248,19 +57245,19 @@
           {
            "idShort": "epochs_per_round",
            "valueType": "xs:integer",
-           "value": "3",
+           "value": "50",
            "modelType": "Property"
           },
           {
            "idShort": "batch_size",
            "valueType": "xs:integer",
-           "value": "7",
+           "value": "4",
            "modelType": "Property"
           },
           {
            "idShort": "img_size",
            "valueType": "xs:integer",
-           "value": "640",
+           "value": "320",
            "modelType": "Property"
           },
           {
@@ -57291,19 +57288,19 @@
           {
            "idShort": "al_rounds",
            "valueType": "xs:integer",
-           "value": "1",
+           "value": "5",
            "modelType": "Property"
           },
           {
            "idShort": "initial_subset_size",
            "valueType": "xs:integer",
-           "value": "5",
+           "value": "100",
            "modelType": "Property"
           },
           {
            "idShort": "add_per_round",
            "valueType": "xs:integer",
-           "value": "2",
+           "value": "50",
            "modelType": "Property"
           },
           {
@@ -57346,13 +57343,13 @@
           {
            "idShort": "num_classes",
            "valueType": "xs:integer",
-           "value": "9",
+           "value": "8",
            "modelType": "Property"
           },
           {
            "idShort": "dataset_yaml",
            "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\active_learning\\data\\full-data\\dataset.yaml",
+           "value": "./data/full-data/dataset.yaml",
            "modelType": "Property"
           }
          ],
@@ -57360,6 +57357,97 @@
         }
        ],
        "modelType": "SubmodelElementList"
+      },
+      {
+       "idShort": "ContinualLearning",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "cl_strategy",
+         "valueType": "xs:string",
+         "value": "replay",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "input_model",
+         "valueType": "xs:string",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\yolo11n.pt",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "current_classes",
+         "valueType": "xs:string",
+         "value": "Ylid, YTrailer, Cabin, GlueGun, BLid, BTrailer, FChassis, Rchassis",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "new_classes",
+         "valueType": "xs:string",
+         "value": "BlackCabin",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "new_data_dir",
+         "valueType": "xs:string",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\continual_learning\\data\\new",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "replay_data_dir",
+         "valueType": "xs:string",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\continual_learning\\data\\replay",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "val_new_data_dir",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "val_replay_data_dir",
+         "valueType": "xs:string",
+         "value": "",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "replay_ratio",
+         "valueType": "xs:float",
+         "value": "0.3",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "epochs",
+         "valueType": "xs:integer",
+         "value": "1",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "batch_size",
+         "valueType": "xs:integer",
+         "value": "4",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "img_size",
+         "valueType": "xs:integer",
+         "value": "320",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "output_dir",
+         "valueType": "xs:string",
+         "value": "./results/cl_runs",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "exp_name",
+         "valueType": "xs:string",
+         "value": "cl_BlackCabin",
+         "modelType": "Property"
+        }
+       ]
       }
      ]
     },

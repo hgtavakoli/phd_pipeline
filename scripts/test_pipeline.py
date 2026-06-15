@@ -122,7 +122,10 @@ def t_compile():
              ROOT / "active_learning" / "utils_yolo.py",
              ROOT / "active_learning" / "main_yolo.py",
              ROOT / "active_learning" / "run_al_from_aas.py",
-             ROOT / "active_learning" / "harvest_from_inference.py"]
+             ROOT / "active_learning" / "harvest_from_inference.py",
+             ROOT / "continual_learning" / "main_cl.py",
+             ROOT / "continual_learning" / "cl_src" / "cl_orchestrator.py",
+             ROOT / "continual_learning" / "cl_src" / "data_utils.py"]
     r = subprocess.run([str(TRAIN_PYTHON), "-m", "py_compile"] + [str(f) for f in files],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr.strip()

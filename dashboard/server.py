@@ -362,6 +362,125 @@ def build_al_cmd(p):
     return [python, "-X", "utf8", "run_al_from_aas.py", "--aas_file", str(aas_path)], n_pool, n_val
 
 
+CL_DIR = ROOT / "continual_learning"
+
+
+def _registry_classes():
+    import yaml
+    cfg = yaml.safe_load(SDG_CONFIG.read_text(encoding="utf-8"))
+    return list(cfg["COMPONENT_USD_MAP"].keys())
+
+
+def _stage_cl_split(dataset_rel, keep_global_ids, remap, out_dir, camera=None):
+    """Copy a dataset's image+label pairs into out_dir, keeping only labels whose
+    GLOBAL class id is in keep_global_ids. If remap is given (dict global->local),
+    rewrite the class ids (used to make new-class data 0-based for the CL offset
+    logic). Returns the number of images written."""
+    d = _safe_path(dataset_rel)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    n = 0
+    for img in _iter_images(d):
+        if camera and camera != "both" and img.parent.name != camera:
+            continue
+        txt = img.with_suffix(".txt")
+        if not txt.exists():
+            continue
+        kept = []
+        for line in txt.read_text().splitlines():
+            parts = line.split()
+            if len(parts) == 5 and int(parts[0]) in keep_global_ids:
+                cid = remap.get(int(parts[0]), int(parts[0])) if remap else int(parts[0])
+                kept.append(f"{cid} {' '.join(parts[1:])}")
+        if kept:
+            shutil.copy2(img, out_dir / img.name)
+            (out_dir / (img.stem + ".txt")).write_text("\n".join(kept))
+            n += 1
+    return n
+
+
+def build_cl_cmd(p):
+    """Stage new-class data (global ids remapped to 0-based) and replay data
+    (old classes kept at their global ids), write the params into the dataset
+    AAS (record mode), and return the main_cl.py command.
+
+    Class-incremental: current_classes = the model's existing classes
+    (registry[0:offset]); new_classes are appended after them. main_cl.py offsets
+    the new-data labels by len(current_classes), so new data must be 0-based —
+    which is why we remap here."""
+    registry = _registry_classes()
+    new_classes = p.get("new_classes") or []
+    current_classes = p.get("current_classes") or [c for c in registry if c not in new_classes]
+    if not new_classes:
+        raise ValueError("pick at least one new class to add")
+    new_ids_global = [registry.index(c) for c in new_classes if c in registry]
+    remap = {g: i for i, g in enumerate(new_ids_global)}        # global -> 0-based new index
+    current_ids = [registry.index(c) for c in current_classes if c in registry]
+
+    work = CL_DIR / "data"
+    shutil.rmtree(work, ignore_errors=True)
+    new_dir, replay_dir = work / "new", work / "replay"
+
+    n_new = _stage_cl_split(p["new_data_rel"], set(new_ids_global), remap, new_dir,
+                            camera=p.get("camera", "both"))
+    if n_new == 0:
+        raise ValueError(f"no images with the new class(es) {new_classes} in the chosen new-data dataset")
+    n_replay = 0
+    if p.get("replay_data_rel"):
+        n_replay = _stage_cl_split(p["replay_data_rel"], set(current_ids), None, replay_dir,
+                                   camera=p.get("camera", "both"))
+
+    model = p.get("model_weights")
+    mpath = (OD_DIR / Path(model).name) if model and not Path(model).is_absolute() else Path(model)
+    if not Path(mpath).exists():
+        cands = list(OD_DIR.rglob(Path(model).name)) if model else []
+        mpath = cands[0] if cands else mpath
+    if not Path(mpath).exists():
+        raise ValueError(f"model not found: {model}")
+
+    exp = p.get("exp_name") or f"cl_{'_'.join(new_classes)}"
+
+    # record mode: write the CL params + the extended class list into the
+    # new-data dataset's AAS (ContinualLearning section).
+    try:
+        aas_rel = generate_dataset_aas(p["new_data_rel"])
+        aas_path = AAS_DIR / aas_rel
+        data = json.loads(aas_path.read_text(encoding="utf-8-sig"))
+        _aas_set_properties(data, {
+            "cl_strategy": p.get("cl_strategy", "replay"),
+            "input_model": str(mpath),
+            "current_classes": ", ".join(current_classes),
+            "new_classes": ", ".join(new_classes),
+            "new_data_dir": str(new_dir),
+            "replay_data_dir": str(replay_dir),
+            "replay_ratio": p.get("replay_ratio", 0.3),
+            "epochs": int(p.get("epochs", 50)),
+            "batch_size": int(p.get("batch_size", 8)),
+            "img_size": int(p.get("img_size", 640)),
+            "exp_name": exp,
+            # the extended class list after this CL step (point 7)
+            "names": ", ".join(current_classes + new_classes),
+        })
+        aas_path.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    except Exception as e:
+        print(f"[CL] WARNING: could not write AAS record: {e}", file=sys.stderr)
+
+    python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
+    cmd = [python, "-X", "utf8", "main_cl.py",
+           "--current_classes", ", ".join(current_classes),
+           "--new_classes", ", ".join(new_classes),
+           "--model_weights", str(mpath),
+           "--new_data_dir", str(new_dir),
+           "--replay_data_dir", str(replay_dir if n_replay else new_dir),
+           "--exp_name", exp,
+           "--output_dir", str(CL_DIR / "results" / "cl_runs"),
+           "--replay_ratio", str(p.get("replay_ratio", 0.3)),
+           "--epochs", str(int(p.get("epochs", 50))),
+           "--batch_size", str(int(p.get("batch_size", 8))),
+           "--img_size", str(int(p.get("img_size", 640)))]
+    return cmd, {"new_classes": new_classes, "current_classes": current_classes,
+                 "n_new": n_new, "n_replay": n_replay, "exp": exp}
+
+
 # --- Command builders -----------------------------------------------------------
 
 def build_sdg_cmd(p):
@@ -765,6 +884,43 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:
                 return self._json({"error": str(e)}, 400)
 
+        if route == "/api/cl_results":
+            # Per-class mAP of every CL run (from results.csv + the run's args),
+            # for the CL overview and CL-vs-baseline comparison.
+            import csv
+            out = []
+            base = CL_DIR / "results" / "cl_runs"
+            if base.exists():
+                for run in sorted(base.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+                    csvf = run / "results.csv"
+                    if not (run.is_dir() and csvf.exists()):
+                        continue
+                    try:
+                        rows = list(csv.DictReader(open(csvf)))
+                        last = rows[-1] if rows else {}
+                        def g(*keys):
+                            for k in keys:
+                                for c in last:
+                                    if c.strip() == k:
+                                        return float(last[c])
+                            return None
+                        out.append({
+                            "name": run.name,
+                            "epochs": len(rows),
+                            "map50": g("metrics/mAP50(B)"),
+                            "map5095": g("metrics/mAP50-95(B)"),
+                            "modified": time.strftime("%Y-%m-%d %H:%M", time.localtime(run.stat().st_mtime)),
+                            "rel": str(run.relative_to(ROOT)),
+                            "weights": (run / "weights" / "best.pt").exists(),
+                        })
+                    except Exception:
+                        continue
+            return self._json(out)
+
+        if route == "/api/cl_classes":
+            # Registry split into "known by a typical model" vs available to add.
+            return self._json({"registry": _registry_classes()})
+
         if route == "/api/cameras":
             # Camera-geometry subfolders of a dataset (for separate AL/training).
             try:
@@ -963,6 +1119,14 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
             ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR)
             return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
+
+        if route == "/api/run_cl":
+            try:
+                cmd, meta = build_cl_cmd(payload)
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)}, 400)
+            ok, err = start_job(f"Continual Learning (+{','.join(meta['new_classes'])})", cmd, CL_DIR)
+            return self._json({"ok": ok, "error": err, **meta})
 
         if route == "/api/run_test":
             # Pipeline self-test as a regular job (live console output).
