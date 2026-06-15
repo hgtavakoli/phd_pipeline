@@ -49,6 +49,19 @@ TRAIN_PYTHON = config_paths.resolve_train_python()
 PORT = 8765
 IMG_EXTS = (".png", ".jpg", ".jpeg")
 
+# Master cross-stage defaults (single source). Re-read on each request so edits
+# to pipeline.yaml take effect without restarting the server.
+PIPELINE_YAML = ROOT / "pipeline.yaml"
+
+
+def load_defaults():
+    try:
+        import yaml
+        return yaml.safe_load(PIPELINE_YAML.read_text(encoding="utf-8")) or {}
+    except Exception as e:
+        print(f"[defaults] WARNING: could not read pipeline.yaml: {e}", file=sys.stderr)
+        return {}
+
 
 def _iter_images(folder):
     """All images (png/jpg) under a folder, recursively."""
@@ -961,6 +974,10 @@ class Handler(BaseHTTPRequestHandler):
                     except Exception:
                         continue
             return self._json(out)
+
+        if route == "/api/defaults":
+            # Master cross-stage defaults (pipeline.yaml) for the dashboard forms.
+            return self._json(load_defaults())
 
         if route == "/api/cl_classes":
             # Registry split into "known by a typical model" vs available to add.

@@ -1089,6 +1089,29 @@ function loadAasList(){
 }
 loadAasList();
 fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').textContent='v'+v.trim());
+// Master defaults from pipeline.yaml — one place sets every stage's form values.
+function setVal(id,v){ const e=$(id); if(e!=null && v!=null) e.value=v; }
+function setChk(id,v){ const e=$(id); if(e!=null && v!=null) e.checked=!!v; }
+fetch('/api/defaults').then(r=>r.json()).then(d=>{
+  const D=(d&&d.defaults)||{}; const s=D.sdg||{}, t=D.training||{}, a=D.active_learning||{}, c=D.continual_learning||{}, inf=D.inference||{};
+  // SDG
+  setVal('fLight',s.light); setVal('fSamples',s.samples); setVal('fEnv',s.env);
+  if(s.width&&s.height) setVal('fRes', s.width+'x'+s.height);
+  setVal('fVis', (s.min_visibility!=null)?String(s.min_visibility):null);
+  setVal('fSpawn',s.spawn_radius); setVal('fSep',s.min_separation); setVal('fIou',s.iou_threshold);
+  setChk('fTrunc',s.drop_truncated); setChk('fOvl',s.filter_overlaps);
+  // Active learning
+  setVal('alStrategy',a.strategy); setChk('alBalance',a.class_balance);
+  setVal('alRounds',a.rounds); setVal('alInit',a.initial_subset); setVal('alAdd',a.add_per_round);
+  setVal('alEpochs',a.epochs); setVal('alBatch',a.batch_size); setVal('alImgsz',a.img_size);
+  // Continual learning
+  setVal('clStrategy',c.strategy); setVal('clRatio',c.replay_ratio);
+  setVal('clEpochs',c.epochs); setVal('clBatch',c.batch_size); setVal('clImgsz',c.img_size);
+  // Inference
+  setVal('lvConf',inf.conf); setVal('hTop',inf.harvest_top); setVal('hConf',inf.harvest_conf);
+  if(typeof updatePreview==='function') updatePreview();
+}).catch(()=>{});
+
 // deep-link: ?tab=NAME opens that tab on load (used for documentation screenshots)
 (function(){ const t=new URLSearchParams(location.search).get('tab'); if(t) try{ showTab(t); }catch(e){} })();
 

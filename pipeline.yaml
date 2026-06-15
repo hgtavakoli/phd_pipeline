@@ -1,0 +1,80 @@
+# =============================================================================
+#  SmartSDG Pipeline - MASTER configuration (single source of cross-stage defaults)
+# =============================================================================
+# This is the one place to change the DEFAULTS the dashboard pre-fills for every
+# stage (SDG, Training, Active Learning, Continual Learning).
+#
+# What lives WHERE (by design - see docs/CONFIG.md):
+#   * This file (pipeline.yaml) ....... cross-stage DEFAULTS + the class registry
+#   * SmartSDG/src/config/config.yaml . SDG scene/camera/renderer params + the
+#                                       authoritative COMPONENT_USD_MAP read by
+#                                       Isaac Sim (new components auto-append there)
+#   * AAS/datasets/<date>/*.json ...... the per-DATASET record (training/AL/CL
+#                                       parameters actually used) - record mode
+#   * pipeline_config.json ............ per-MACHINE paths (git-ignored)
+#
+# Changing a value here updates the dashboard's default for that control. The
+# actual value used by a run is still whatever the dashboard sends / the AAS
+# records, so per-dataset history is preserved.
+
+version: 2
+
+# ---- Class registry (informational mirror) ----------------------------------
+# The authoritative registry (defining global class IDs) is COMPONENT_USD_MAP in
+# SmartSDG/src/config/config.yaml - Isaac Sim reads that directly. This list is
+# kept here for visibility; the dashboard reads the live one via /api/components.
+classes:
+  - Ylid
+  - YTrailer
+  - Cabin
+  - GlueGun
+  - BLid
+  - BTrailer
+  - FChassis
+  - Rchassis
+  - BlackCabin
+
+# ---- Stage defaults ---------------------------------------------------------
+defaults:
+
+  sdg:                       # Synthetic Data Generation
+    light: Medium            # Low | Medium | High
+    samples: 100
+    env: plane               # plane | true | false
+    width: 640
+    height: 480
+    min_visibility: 0.95     # keep objects >= this fraction visible (0 = off)
+    spawn_radius: 0.2        # metres
+    min_separation: 0.05     # metres
+    iou_threshold: 0.7       # overlap filter
+    drop_truncated: true
+    filter_overlaps: true
+
+  training:                  # Object Detection training
+    epochs: 50
+    batch_size: 8
+    img_size: 640
+    weights: yolov12l.pt     # YOLOv12 is the project default
+
+  active_learning:
+    strategy: ppal_feat      # random | entropy | ppal_box | ppal_feat
+    class_balance: true
+    rounds: 3
+    initial_subset: 10
+    add_per_round: 5
+    epochs: 10
+    batch_size: 8
+    img_size: 640
+    weights: yolov12l.pt
+
+  continual_learning:
+    strategy: replay         # replay (knowledge-distillation can be added later)
+    replay_ratio: 0.3
+    epochs: 50
+    batch_size: 8
+    img_size: 640
+
+  inference:                 # live + harvest
+    conf: 0.25
+    harvest_top: 50
+    harvest_conf: 0.10
