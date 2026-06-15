@@ -34,8 +34,10 @@ OD_DIR = ROOT / "OD_training"
 AAS_DIR = ROOT / "AAS"
 SDG_CONFIG = SMARTSDG / "src" / "config" / "config.yaml"
 TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v2.0.json"
-ISAAC_PYTHON = Path(r"C:\Users\hota02\Documents\omniverse\python.bat")
-TRAIN_PYTHON = Path(r"C:\Users\hota02\AppData\Local\anaconda3\envs\yolov12\python.exe")
+sys.path.insert(0, str(ROOT))
+import config_paths
+ISAAC_PYTHON = Path(config_paths.resolve_isaac_python())
+TRAIN_PYTHON = Path(config_paths.resolve_train_python())
 
 TEST_DS = "MULTI_Cabin-GlueGun_Medium_plane"  # produced by the SDG tier (2 components)
 

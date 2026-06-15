@@ -59,6 +59,9 @@ paper_visualisation/images/
 AAS/aasx-package-explorer*/
 isaacsim/
 
+# ----- Per-machine config (each machine keeps its own) -----
+pipeline_config.json
+
 # ----- Logs / temp -----
 *.log
 *.tmp

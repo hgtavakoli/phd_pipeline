@@ -1,0 +1,6 @@
+{
+  "_comment": "Copy this file to pipeline_config.json and set the three machine paths. Or set env vars SMARTSDG_ISAAC_PYTHON / SMARTSDG_TRAIN_PYTHON / SMARTSDG_VAL_REAL. Run 'python config_paths.py' to verify resolution.",
+  "isaac_python": "C:\\Users\\<you>\\Documents\\omniverse\\python.bat",
+  "train_python": "C:\\Users\\<you>\\AppData\\Local\\anaconda3\\envs\\yolov12\\python.exe",
+  "val_real": "C:\\path\\to\\real\\val_images"
+}

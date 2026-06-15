@@ -19,6 +19,7 @@ import mimetypes
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -38,10 +39,12 @@ DATASETS = SMARTSDG / "Datasets" / "yolo_experiments"
 RAW_OUTPUT = SMARTSDG / "Datasets" / "unified_render_output"
 # Template AAS cloned for per-dataset training configs (must parse without BOM).
 TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v2.0.json"
-ISAAC_PYTHON = r"C:\Users\hota02\Documents\omniverse\python.bat"
-# Interpreter for training jobs (OD/AL/CL). Falls back to 'python' on PATH if
-# this conda env doesn't exist on the machine.
-TRAIN_PYTHON = r"C:\Users\hota02\AppData\Local\anaconda3\envs\yolov12\python.exe"
+# Machine-specific paths are resolved portably (env var > pipeline_config.json >
+# auto-detect > fallback). See config_paths.py — no source edits needed per machine.
+sys.path.insert(0, str(ROOT))
+import config_paths
+ISAAC_PYTHON = config_paths.resolve_isaac_python()
+TRAIN_PYTHON = config_paths.resolve_train_python()
 
 PORT = 8765
 IMG_EXTS = (".png", ".jpg", ".jpeg")
@@ -183,7 +186,8 @@ def generate_dataset_aas(dataset_rel, meta=None):
 SDG_CONFIG = SMARTSDG / "src" / "config" / "config.yaml"
 AL_DIR = ROOT / "active_learning"
 HARVEST_DIR = AL_DIR / "harvest"
-VAL_REAL = Path(r"C:\Users\hota02\Documents\sd_light_od\cluster_experiments\data\val_real")
+_vr = config_paths.resolve_val_real()
+VAL_REAL = Path(_vr) if _vr else (ROOT / "data" / "val_real")
 
 
 def _append_component_to_config(name, usd_filename):
