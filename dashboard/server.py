@@ -109,6 +109,18 @@ def _reader(job):
             job["lines"].append(m)
     except Exception as e:
         job["lines"].append(f"--- AAS provenance write skipped: {e} ---")
+    # D) inference/harvest events -> pipeline log
+    try:
+        if proc.returncode == 0 and job["name"].startswith("AL harvest"):
+            man = _newest(HARVEST_DIR, "harvest_manifest.json")
+            info = json.loads(man.read_text()) if man else {}
+            log_pipeline_event("inference", "harvest_completed",
+                               harvest=(man.parent.name if man else None),
+                               model=info.get("model"), source=info.get("source"),
+                               scored=info.get("scored"), kept=info.get("kept"))
+            job["lines"].append("--- pipeline log: harvest event recorded ---")
+    except Exception as e:
+        job["lines"].append(f"--- pipeline log (harvest) skipped: {e} ---")
 
 
 def start_job(name, cmd, cwd, meta=None):
@@ -409,6 +421,13 @@ def record_to_aas(job):
     _aas_append_run(data, entry)
     Path(aas_path).write_text(json.dumps(data, indent=1), encoding="utf-8")
     msgs.append(f"--- AAS provenance updated: {Path(aas_path).name} ({stage}) ---")
+
+    # C) also append to the factory-wide pipeline event log
+    dataset = Path(aas_path).stem.replace("CA_Modul-OD_dataset_", "")
+    log_pipeline_event(stage, "run_completed", dataset=dataset, status=entry["status"],
+                       duration_s=entry.get("duration_s"), map50=entry.get("map50"),
+                       gain=entry.get("gain"), model_path=entry.get("model_path"),
+                       aas_file=str(Path(aas_path).relative_to(ROOT)))
     return msgs
 
 
@@ -423,6 +442,97 @@ def _newest_results_csv(stage, aas_path):
     if stage == "CL":
         return _newest(CL_DIR / "results" / "cl_runs", "results.csv")
     return _newest(OD_DIR / "results", "results.csv")
+
+
+# =============================================================================
+#  C) Factory-wide pipeline event log  +  E) as a valid IEC 63278 AAS Environment
+# =============================================================================
+# A single AAS Environment (AAS/pipeline_history.json) with one Submodel,
+# 'PipelineHistory', holding an append-only 'Events' list. Every action in the
+# pipeline (generation, training, AL, CL, inference, harvest, session start) is
+# appended as a SubmodelElementCollection — the modular, trackable factory record
+# other modules can consume.
+
+PIPELINE_LOG = AAS_DIR / "pipeline_history.json"
+SUBMODEL_ID = "urn:smartsdg:submodel:pipeline-history"
+# One session per server start; the user can also start a named session/task.
+SESSION = {"id": "session_" + time.strftime("%Y%m%dT%H%M%S"), "name": "", "task": ""}
+
+
+def _pipeline_log_skeleton():
+    """A minimal but valid AAS Environment (parses with aas_core3)."""
+    return {
+        "assetAdministrationShells": [{
+            "idShort": "CA_Modul",
+            "id": "urn:smartsdg:aas:ca-modul-pipeline",
+            "assetInformation": {"assetKind": "Instance",
+                                 "globalAssetId": "urn:smartsdg:asset:ca-modul"},
+            "submodels": [{"type": "ModelReference",
+                           "keys": [{"type": "Submodel", "value": SUBMODEL_ID}]}],
+            "modelType": "AssetAdministrationShell",
+        }],
+        "submodels": [{
+            "id": SUBMODEL_ID,
+            "idShort": "PipelineHistory",
+            "kind": "Instance",
+            "submodelElements": [{
+                "idShort": "Events",
+                "typeValueListElement": "SubmodelElement",
+                "modelType": "SubmodelElementList",
+                "value": [],
+            }],
+            "modelType": "Submodel",
+        }],
+    }
+
+
+def _load_pipeline_log():
+    if PIPELINE_LOG.exists():
+        try:
+            return json.loads(PIPELINE_LOG.read_text(encoding="utf-8-sig"))
+        except Exception:
+            pass
+    return _pipeline_log_skeleton()
+
+
+def log_pipeline_event(stage, action, **props):
+    """Append one event to the factory-wide pipeline history AAS."""
+    try:
+        data = _load_pipeline_log()
+        events = _aas_find_node(data, "Events")
+        if events is None:
+            data = _pipeline_log_skeleton()
+            events = _aas_find_node(data, "Events")
+        events.setdefault("value", [])
+        entry = {
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "session_id": SESSION["id"],
+            "session_name": SESSION.get("name", ""),
+            "task": SESSION.get("task", ""),
+            "stage": stage,
+            "action": action,
+        }
+        entry.update({k: v for k, v in props.items() if v is not None})
+        eid = "event_" + time.strftime("%Y%m%dT%H%M%S") + f"_{len(events['value'])}"
+        events["value"].append({
+            "idShort": eid, "modelType": "SubmodelElementCollection",
+            "value": [_aas_prop(k, v) for k, v in entry.items()],
+        })
+        PIPELINE_LOG.write_text(json.dumps(data, indent=1), encoding="utf-8")
+    except Exception as e:
+        print(f"[pipeline_log] WARNING: {e}", file=sys.stderr)
+
+
+def read_pipeline_events():
+    data = _load_pipeline_log()
+    ev = _aas_find_node(data, "Events")
+    out = []
+    if ev and ev.get("value"):
+        for coll in ev["value"]:
+            if isinstance(coll, dict) and coll.get("value"):
+                out.append({e.get("idShort"): e.get("value") for e in coll["value"]
+                            if isinstance(e, dict)})
+    return out
 
 
 def generate_dataset_aas(dataset_rel, meta=None):
@@ -1012,6 +1122,8 @@ class Handler(BaseHTTPRequestHandler):
         model = YOLO(str(mpath))
         is_webcam = isinstance(cap_src, int)
         _stream_active = True
+        log_pipeline_event("inference", "live_started",
+                           model=Path(mpath).name, source=("webcam:" + str(cap_src)) if is_webcam else str(cap_src))
         self.send_response(200)
         self.send_header("Content-Type", "multipart/x-mixed-replace; boundary=frame")
         self.send_header("Cache-Control", "no-cache")
@@ -1233,6 +1345,14 @@ class Handler(BaseHTTPRequestHandler):
             # Master cross-stage defaults (pipeline.yaml) for the dashboard forms.
             return self._json(load_defaults())
 
+        if route == "/api/pipeline_log":
+            # Factory-wide event log (AAS PipelineHistory) — newest first.
+            events = read_pipeline_events()
+            return self._json({"session": SESSION, "events": list(reversed(events))})
+
+        if route == "/api/session":
+            return self._json(SESSION)
+
         if route == "/api/dataset_aas":
             # Full AAS provenance record for a dataset: generation params, latest
             # results, AL/CL params, and the append-only run history. The
@@ -1430,6 +1550,8 @@ class Handler(BaseHTTPRequestHandler):
                     shutil.move(str(img), ds / img_name)
                     if lbl.exists():
                         shutil.move(str(lbl), ds / (img.stem + ".txt"))
+                    log_pipeline_event("inference", "real_image_accepted",
+                                       harvest=d.name, image=img_name, dataset=f"REAL_{d.name}")
                     return self._json({"ok": True, "dataset": f"REAL_{d.name}"})
                 else:
                     img.unlink(missing_ok=True)
@@ -1461,6 +1583,18 @@ class Handler(BaseHTTPRequestHandler):
             ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR,
                                 meta={**payload, "stage": "AL"})
             return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
+
+        if route == "/api/session":
+            # Start / name a session or task — tags all subsequent log events.
+            if payload.get("name") is not None:
+                SESSION["name"] = str(payload["name"])
+            if payload.get("task") is not None:
+                SESSION["task"] = str(payload["task"])
+            if payload.get("new"):
+                SESSION["id"] = "session_" + time.strftime("%Y%m%dT%H%M%S")
+            log_pipeline_event("session", "session_set",
+                               name=SESSION["name"], task=SESSION["task"])
+            return self._json({"ok": True, "session": SESSION})
 
         if route == "/api/stop_stream":
             # Explicitly end any live stream: bumping the token makes the
@@ -1509,6 +1643,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     server = ThreadingHTTPServer(("127.0.0.1", PORT), Handler)
     url = f"http://127.0.0.1:{PORT}"
+    log_pipeline_event("session", "session_started", session=SESSION["id"])
     print(f"SmartSDG dashboard running at {url}  (Ctrl+C to stop)")
     threading.Timer(0.8, lambda: webbrowser.open(url)).start()
     try:

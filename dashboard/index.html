@@ -111,6 +111,7 @@
   <button data-tab="console" onclick="showTab('console')">📟 Console</button>
   <button data-tab="datasets" onclick="showTab('datasets')">🖼 Datasets</button>
   <button data-tab="results" onclick="showTab('results')">🏋 Results</button>
+  <button data-tab="pipelog" onclick="showTab('pipelog')">📜 Pipeline Log</button>
   <button data-tab="docs" onclick="showTab('docs')">📚 Docs</button>
 </nav>
 
@@ -392,6 +393,23 @@
   </div>
 </div>
 
+<!-- ============ PIPELINE LOG ============ -->
+<div class="tab" id="tab-pipelog">
+  <div class="card">
+    <h2>📜 Pipeline Log — factory-wide event history <span data-info="pipelog"></span>
+      <button class="secondary" style="padding:4px 10px" onclick="loadPipelog()">⟳</button></h2>
+    <p class="muted">Every action across the whole pipeline (generation, training, AL, CL, inference, harvest) is appended to the AAS <code>PipelineHistory</code> submodel — the modular, trackable factory record other modules can consume. Stored at <code>AAS\pipeline_history.json</code>.</p>
+    <div class="row">
+      <div><label>Session / task name <span data-info="session"></span></label><input id="sessName" type="text" placeholder="e.g. line-A retrofit June" style="width:240px"></div>
+      <div><label>Task</label><input id="sessTask" type="text" placeholder="e.g. add BlackCabin" style="width:200px"></div>
+      <button class="secondary" onclick="setSession(false)">Set session</button>
+      <button class="secondary" onclick="setSession(true)">＋ New session</button>
+      <span id="sessMsg" class="muted"></span>
+    </div>
+    <div id="pipelogView"></div>
+  </div>
+</div>
+
 <!-- ============ DOCS ============ -->
 <div class="tab" id="tab-docs">
   <div class="card">
@@ -480,6 +498,27 @@ function showTab(name){
   if(name==='live') loadLiveModels();
   if(name!=='live') lvStop();
   if(name==='cl'){ clInit(); }
+  if(name==='pipelog') loadPipelog();
+}
+
+// ---------- pipeline log (factory-wide AAS event history) ----------
+async function loadPipelog(){
+  const r=await fetch('/api/pipeline_log').then(x=>x.json());
+  if(r.session){ $('sessName').value=r.session.name||''; $('sessTask').value=r.session.task||''; }
+  const ev=r.events||[];
+  const cols=['timestamp','stage','action','session_name','dataset','status','map50','gain','duration_s','model','source','kept'];
+  let html=`<p class="muted">${ev.length} events (newest first)</p>`;
+  html+='<table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+  html+=ev.map(e=>{
+    const stColor = e.action&&e.action.includes('completed')?'var(--accent)':e.stage==='session'?'var(--accent2)':'';
+    return '<tr>'+cols.map(c=>`<td style="${c==='stage'?'color:'+stColor:''}">${e[c]!=null?e[c]:''}</td>`).join('')+'</tr>';
+  }).join('');
+  html+='</tbody></table>';
+  $('pipelogView').innerHTML=ev.length?html:'<p class="muted">No events yet.</p>';
+}
+async function setSession(isNew){
+  const r=await post('/api/session',{name:$('sessName').value,task:$('sessTask').value,new:!!isNew});
+  if(r.ok){ $('sessMsg').textContent='session: '+r.session.id+(r.session.name?' ('+r.session.name+')':''); loadPipelog(); }
 }
 
 // ---------- continual learning ----------
@@ -1258,6 +1297,10 @@ Object.assign(INFO, {
     long:'Match the geometry the base model was trained on. "both" uses all images.'},
   cl_epochs:{short:'Training epochs for this incremental step.', long:'Fewer than full training is usually enough since the model already knows most of the task. 30–50 typical.'},
   cl_batch:{short:'Batch size (split into new + replay by the ratio).', long:'On 8 GB GPU use 8–16 at 640px.'},
+  pipelog:{guide:'CONFIG.md', short:'Append-only record of every pipeline action, stored in the AAS PipelineHistory submodel.',
+    long:'Generation, training, AL, CL, inference and harvest each append an event (timestamp, session, stage, status, metrics) to AAS/pipeline_history.json — a valid IEC 63278 AAS Environment. This is the factory-wide, trackable, modular record: another module can read it to know exactly what happened, when, and with what result.'},
+  session:{short:'Name the current session/task so all following events are tagged with it.',
+    long:'Use this when a factory event starts a new piece of work (e.g. a new line retrofit, adding an object). "New session" starts a fresh session id; events recorded afterwards carry the name/task, so you can filter the history per session.'},
   cl_overview2:{guide:'CONTINUAL_LEARNING.md', short:'Final accuracy and cost of each CL run, for comparison with full retraining.',
     long:'Compare a CL step (here) against training a fresh model on all classes (Results tab) — CL is far cheaper in time/data but verify it keeps the old-class accuracy. The console prints the batch composition and timing per run.'},
 });

@@ -206,6 +206,24 @@ print("ROUTING_OK")
     return "5 dataset-name patterns route to the correct exp folder"
 
 
+def t_aas_valid():
+    """Every AAS json parses as a valid IEC 63278 Environment (aas_core3)."""
+    code = (
+        "import glob, json, sys\n"
+        "from aas_core3 import jsonization\n"
+        "files = glob.glob(r'%s/AAS/*.json') + glob.glob(r'%s/AAS/datasets/**/*.json', recursive=True)\n"
+        "bad=[]\n"
+        "for f in files:\n"
+        "    try: jsonization.environment_from_jsonable(json.load(open(f, encoding='utf-8-sig')))\n"
+        "    except Exception as e: bad.append(f+': '+str(e)[:60])\n"
+        "assert not bad, 'invalid AAS: '+str(bad)\n"
+        "print('AAS_OK', len(files))" % (ROOT, ROOT)
+    )
+    r = subprocess.run([str(TRAIN_PYTHON), "-c", code], capture_output=True, text=True)
+    assert "AAS_OK" in r.stdout, (r.stderr or r.stdout).strip()[-300:]
+    return r.stdout.strip().split()[-1] + " AAS files are valid IEC 63278 Environments"
+
+
 def t_al_strategies():
     """AL selection module imports and exposes the expected strategy helpers."""
     r = subprocess.run([str(TRAIN_PYTHON), "-c",
@@ -375,6 +393,7 @@ def main():
     check("converter quality filters (synthetic)", t_converter_filters)
     check("exp-folder routing", t_exp_routing)
     check("AL strategies importable", t_al_strategies)
+    check("AAS files valid (IEC 63278)", t_aas_valid)
 
     if args.full:
         print("=" * 64)
