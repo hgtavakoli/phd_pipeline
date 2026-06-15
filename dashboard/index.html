@@ -101,28 +101,31 @@
 </header>
 
 <nav>
-  <button data-tab="run" class="active" onclick="showTab('run')">🚀 Run</button>
-  <button data-tab="console" onclick="showTab('console')">📟 Live Console</button>
+  <button data-tab="sdg" class="active" onclick="showTab('sdg')">① SDG</button>
+  <button data-tab="train" onclick="showTab('train')">② Training</button>
+  <button data-tab="harvest" onclick="showTab('harvest')">③ Inference</button>
+  <button data-tab="al" onclick="showTab('al')">④ Active Learning</button>
+  <span style="width:1px;background:var(--border);margin:6px 8px"></span>
+  <button data-tab="console" onclick="showTab('console')">📟 Console</button>
   <button data-tab="datasets" onclick="showTab('datasets')">🖼 Datasets</button>
   <button data-tab="results" onclick="showTab('results')">🏋 Results</button>
-  <button data-tab="al" onclick="showTab('al')">🧠 Active Learning</button>
-  <button data-tab="harvest" onclick="showTab('harvest')">🎯 AL Harvest (real)</button>
-  <button data-tab="docs" onclick="showTab('docs')">📚 Docs &amp; Commands</button>
+  <button data-tab="docs" onclick="showTab('docs')">📚 Docs</button>
 </nav>
 
 <main>
 
-<!-- ============ RUN ============ -->
-<div class="tab show" id="tab-run">
+<!-- ============ ① SDG ============ -->
+<div class="tab show" id="tab-sdg">
   <div class="card">
-    <h2>Synthetic Data Generation</h2>
+    <h2>① Synthetic Data Generation <span data-info="sdg_overview"></span></h2>
+    <p class="muted">Render labelled training images in Isaac Sim. Pick the object classes and scene settings; the output is a YOLO dataset you train on in step ②.</p>
     <div class="row">
-      <div><label>Class source (AAS file — edit it to add/change components)</label>
+      <div><label>Class source (AAS file — edit it to add/change components) <span data-info="sdg_classsource"></span></label>
         <select id="fClassAas" onchange="loadComponents()" style="min-width:320px"></select>
         <button class="secondary" style="padding:5px 10px" title="Re-read AAS files and update the class list (picks up edited JSONs and new USD files)" onclick="loadClassAasList()">⟳</button></div>
     </div>
     <div class="row">
-      <div><label>Components</label>
+      <div><label>Components <span data-info="sdg_components"></span></label>
         <span class="muted"><a href="#" onclick="setAll(true);return false">all</a> · <a href="#" onclick="setAll(false);return false">none</a></span>
         <div class="chips" id="comps"></div>
         <div id="compRegistered" style="color:var(--accent);font-size:.78rem;margin-top:4px"></div>
@@ -130,14 +133,14 @@
       </div>
     </div>
     <div class="row">
-      <div><label>Mode</label>
+      <div><label>Mode <span data-info="sdg_mode"></span></label>
         <select id="fMode"><option value="multi" selected>multi-object</option><option value="single">single-object (one run, first checked)</option></select></div>
-      <div><label>Light</label>
+      <div><label>Light <span data-info="sdg_light"></span></label>
         <select id="fLight"><option>Low</option><option selected>Medium</option><option>High</option></select></div>
-      <div><label>Images</label><input id="fSamples" type="number" value="100" min="1" style="width:80px"></div>
-      <div><label>Environment</label>
+      <div><label>Images <span data-info="sdg_samples"></span></label><input id="fSamples" type="number" value="100" min="1" style="width:80px"></div>
+      <div><label>Environment <span data-info="sdg_env"></span></label>
         <select id="fEnv"><option selected>plane</option><option value="true">true (3D scene)</option><option value="false">false (void)</option></select></div>
-      <div><label>Resolution</label>
+      <div><label>Resolution <span data-info="sdg_res"></span></label>
         <select id="fRes">
           <option value="128x80">128×80 (fast test)</option>
           <option value="640x480" selected>640×480 (recommended)</option>
@@ -147,21 +150,21 @@
       <div><label>Seed (optional)</label><input id="fSeed" type="number" placeholder="random" style="width:90px"></div>
     </div>
     <div class="row">
-      <div><label>Min visibility</label>
+      <div><label>Min visibility <span data-info="sdg_visibility"></span></label>
         <select id="fVis"><option value="0">off</option><option value="0.5">≥50%</option><option value="0.75">≥75%</option><option value="0.95" selected>≥95%</option></select></div>
-      <div><label>Spawn radius (m)</label><input id="fSpawn" type="number" step="0.05" value="0.2" style="width:80px"></div>
-      <div><label>Min separation (m)</label><input id="fSep" type="number" step="0.01" value="0.05" style="width:80px"></div>
-      <div><label>IoU overlap filter</label><input id="fIou" type="number" step="0.05" value="0.7" style="width:80px"></div>
-      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fTrunc" type="checkbox" checked> drop border-cut frames</label></div>
-      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fOvl" type="checkbox" checked> overlap filter</label></div>
+      <div><label>Spawn radius (m) <span data-info="sdg_spawn"></span></label><input id="fSpawn" type="number" step="0.05" value="0.2" style="width:80px"></div>
+      <div><label>Min separation (m) <span data-info="sdg_sep"></span></label><input id="fSep" type="number" step="0.01" value="0.05" style="width:80px"></div>
+      <div><label>IoU overlap filter <span data-info="sdg_iou"></span></label><input id="fIou" type="number" step="0.05" value="0.7" style="width:80px"></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fTrunc" type="checkbox" checked> drop border-cut frames</label><span data-info="sdg_trunc"></span></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fOvl" type="checkbox" checked> overlap filter</label><span data-info="sdg_ovl"></span></div>
     </div>
     <details style="margin:6px 0 10px">
       <summary style="cursor:pointer;color:var(--accent2);font-size:.85rem">⚙ Advanced renderer settings (ray casting / sampling — affect dataset quality)</summary>
       <div class="row" style="margin-top:10px">
         <div><label>Renderer</label>
           <select id="fRenderer"><option value="">config (PathTracing)</option><option>PathTracing</option><option>RayTracedLighting</option></select></div>
-        <div><label>Samples per pixel (spp)</label><input id="fSpp" type="number" min="1" placeholder="config (8)" style="width:100px"></div>
-        <div><label>Max ray bounces</label><input id="fBounces" type="number" min="1" placeholder="config (32)" style="width:100px"></div>
+        <div><label>Samples per pixel (spp) <span data-info="sdg_spp"></span></label><input id="fSpp" type="number" min="1" placeholder="config (8)" style="width:100px"></div>
+        <div><label>Max ray bounces <span data-info="sdg_bounces"></span></label><input id="fBounces" type="number" min="1" placeholder="config (32)" style="width:100px"></div>
         <div><label>Denoiser</label>
           <select id="fDenoiser"><option value="">config (on)</option><option value="on">on</option><option value="off">off</option></select></div>
       </div>
@@ -175,38 +178,42 @@
   </div>
 
   <div class="card">
-    <h2>Object Detection Training</h2>
+    <h2>Pipeline Self-Test <span data-info="selftest"></span></h2>
     <div class="row">
-      <div><label>AAS config</label><select id="fAas" style="min-width:320px"></select>
+      <button class="secondary" id="btnTestQuick" onclick="runTest(false)">🧪 Quick test (~10 s, static checks)</button>
+      <button class="secondary" id="btnTestFull" onclick="runTest(true)">🧪 Full test (~2–5 min, real SDG + training)</button>
+      <span class="muted">11 checks across configs, assets, class-ID registry, converter quality filters, exp routing — plus a real generation, training and AL loop in full mode. Run after every change.</span>
+    </div>
+  </div>
+</div>
+
+<!-- ============ ② TRAINING ============ -->
+<div class="tab" id="tab-train">
+  <div class="card">
+    <h2>② Object Detection Training <span data-info="train_overview"></span></h2>
+    <p class="muted">Fine-tune a YOLOv12 detector on a generated dataset, driven by its AAS config. Each camera geometry trains as its own run.</p>
+    <div class="row">
+      <div><label>AAS config <span data-info="train_aas"></span></label><select id="fAas" style="min-width:320px"></select>
         <button class="secondary" style="padding:5px 10px" title="Refresh the AAS config list" onclick="loadAasList()">⟳</button></div>
-      <div><label>Cameras</label>
+      <div><label>Cameras <span data-info="train_cameras"></span></label>
         <span class="chips">
           <label><input type="checkbox" id="cam1" checked> Replicator (top-down)</label>
           <label><input type="checkbox" id="cam2" checked> Replicator_01 (orbital)</label>
         </span></div>
     </div>
     <div class="row">
-      <div><label>Epochs</label><input id="tEpochs" type="number" min="1" placeholder="AAS (1)" style="width:90px"></div>
-      <div><label>Image size</label>
+      <div><label>Epochs <span data-info="train_epochs"></span></label><input id="tEpochs" type="number" min="1" placeholder="AAS (1)" style="width:90px"></div>
+      <div><label>Image size <span data-info="train_imgsz"></span></label>
         <select id="tImgsz"><option value="">AAS (640)</option><option>320</option><option>480</option><option>640</option><option>800</option><option>1280</option></select></div>
-      <div><label>Batch size</label><input id="tBatch" type="number" min="1" placeholder="AAS (32)" style="width:90px"></div>
-      <div><label>Base weights</label><select id="tWeights"><option value="">AAS (./yolov12l.pt)</option></select></div>
-      <div><label>Save every N epochs</label><input id="tSave" type="number" min="1" placeholder="AAS (10)" style="width:90px"></div>
+      <div><label>Batch size <span data-info="train_batch"></span></label><input id="tBatch" type="number" min="1" placeholder="AAS (32)" style="width:90px"></div>
+      <div><label>Base weights <span data-info="train_weights"></span></label><select id="tWeights"><option value="">AAS (./yolov12l.pt)</option></select></div>
+      <div><label>Save every N epochs <span data-info="train_save"></span></label><input id="tSave" type="number" min="1" placeholder="AAS (10)" style="width:90px"></div>
       <button class="primary" id="btnRunTrain" onclick="runTrain()">▶ Run training</button>
     </div>
     <p class="muted"><b>Record mode:</b> empty fields use the values stored in the selected AAS file; filled fields are <b>saved into the dataset's AAS file</b> (under <code>AAS\datasets\</code>) so it always documents your latest training parameters. Pipeline templates at the AAS root (v0.x, v2.0) are never modified — overrides there apply to the run only.
     Each selected camera trains as its own run — untick one to train on a single camera.
     Per-dataset AAS configs are created automatically after every generation (in <code>AAS\datasets\&lt;date&gt;\</code>).
     Tip: batch 32 may exceed the RTX 2080's 8 GB at img 640 with YOLOv12-L — use 8–16, or pass <code>-1</code> for auto-fit.</p>
-  </div>
-
-  <div class="card">
-    <h2>Pipeline Self-Test</h2>
-    <div class="row">
-      <button class="secondary" id="btnTestQuick" onclick="runTest(false)">🧪 Quick test (~10 s, static checks)</button>
-      <button class="secondary" id="btnTestFull" onclick="runTest(true)">🧪 Full test (~2–5 min, real SDG + training)</button>
-      <span class="muted">11 checks: configs, assets, class-ID registry, converter quality filters, exp routing — plus a real generation and a 1-epoch training in full mode. Run after every change.</span>
-    </div>
   </div>
 </div>
 
@@ -291,14 +298,14 @@
 <!-- ============ AL HARVEST ============ -->
 <div class="tab" id="tab-harvest">
   <div class="card">
-    <h2>Harvest AL candidates from real images (inference-time)</h2>
-    <p class="muted">Run a trained model over a folder of <b>real, unlabeled</b> images. The most <b>uncertain</b> frames (where the model is least sure) are kept with the model's predictions as pre-labels — these are the most valuable real images to label next.</p>
+    <h2>③ Inference → harvest AL candidates from real images <span data-info="inf_overview"></span></h2>
+    <p class="muted">Run a trained detector over a folder of <b>real, unlabelled</b> images. The most <b>uncertain</b> frames (where the model is least sure) are kept with the model's predictions as pre-labels — these are the most valuable real images to label next, feeding step ④ Active Learning.</p>
     <div class="row">
-      <div><label>Model (best.pt)</label><select id="hModel" style="min-width:200px"></select></div>
-      <div><label>Real images folder</label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:300px">
+      <div><label>Model (best.pt) <span data-info="inf_model"></span></label><select id="hModel" style="min-width:200px"></select></div>
+      <div><label>Real images folder <span data-info="inf_source"></span></label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:300px">
         <button class="secondary" style="padding:5px 10px" onclick="openFolderPicker()">📁 Browse…</button></div>
-      <div><label>Keep top-N uncertain</label><input id="hTop" type="number" min="1" value="50" style="width:90px"></div>
-      <div><label>Conf threshold</label><input id="hConf" type="number" step="0.05" value="0.10" style="width:80px"></div>
+      <div><label>Keep top-N uncertain <span data-info="inf_top"></span></label><input id="hTop" type="number" min="1" value="50" style="width:90px"></div>
+      <div><label>Conf threshold <span data-info="inf_conf"></span></label><input id="hConf" type="number" step="0.05" value="0.10" style="width:80px"></div>
       <button class="primary" id="btnHarvest" onclick="runHarvest()">▶ Harvest</button>
     </div>
   </div>
@@ -318,6 +325,7 @@
   <div class="card">
     <h2>Project documentation</h2>
     <div class="doclist">
+      <button class="primary" onclick="loadDoc('GUIDE.md')">📖 Full User Guide</button>
       <button class="secondary" onclick="loadDoc('README.md')">README</button>
       <button class="secondary" onclick="loadDoc('HYPERPARAMETERS.md')">Hyperparameters</button>
       <button class="secondary" onclick="loadDoc('ACTIVE_LEARNING.md')">Active Learning guide</button>
@@ -656,7 +664,7 @@ function updatePreview(){
   if(p.denoiser) c += ` --denoiser ${p.denoiser}`;
   $('sdgCmdPreview').textContent = c;
 }
-document.querySelectorAll('#tab-run select, #tab-run input').forEach(el=>el.addEventListener('input',updatePreview));
+document.querySelectorAll('#tab-sdg select, #tab-sdg input').forEach(el=>el.addEventListener('input',updatePreview));
 updatePreview();
 
 // ---------- run / stop ----------
@@ -915,6 +923,71 @@ Object.assign(INFO, {
     long:'The pretrained checkpoint the first round fine-tunes from. YOLOv12-L is the project default; a smaller model trains faster for quick tests.'},
   al_gain:{guide:'ACTIVE_LEARNING.md', short:'The payoff: accuracy vs number of labelled images, per run.',
     long:'Each line is one AL run. The gain column is best mAP50 minus the round-0 mAP50. Compare a strategy line against the random baseline at the same number of labelled images: the gap is what AL bought you. Compare the two camera geometries as separate lines.'},
+});
+Object.assign(INFO, {
+  // ----- SDG -----
+  sdg_overview:{guide:'GUIDE.md', short:'Generate labelled training images in NVIDIA Isaac Sim — no real photos or manual labelling needed.',
+    long:'Isaac Sim renders your 3D component models in randomised poses, lighting and camera angles, and writes pixel-perfect YOLO labels automatically. Two cameras (top-down + orbital) capture every scene. Quality filters then drop frames where objects are occluded, cut by the border, or overlapping, so every kept image is clean. The result is a YOLO dataset under SmartSDG/Datasets/yolo_experiments/.'},
+  sdg_classsource:{guide:'GUIDE.md', short:'The AAS file whose class list defines which components appear and their global class IDs.',
+    long:'Components come from this AAS file, validated against the USD models on disk. To add a new object: add its name here and drop <Name>.usd into the assets folder — it auto-registers with the next free class ID (existing IDs never change, so old datasets stay valid).'},
+  sdg_components:{guide:'GUIDE.md', short:'Which object classes to render. Grayed-out items are missing their 3D (USD) file.',
+    long:'In multi-object mode all checked components are scattered into each scene; in single-object mode only the first checked one is rendered. Class IDs are global and fixed by the registry order, so a subset dataset stays compatible with full datasets.'},
+  sdg_mode:{short:'multi-object = several components per scene (object detection). single-object = one component per scene.',
+    long:'Multi-object produces realistic cluttered scenes for detection training. Single-object is useful for classification-style data or isolating one part.'},
+  sdg_light:{short:'Lighting intensity band: Low / Medium / High.',
+    long:'Each band randomises light intensity and colour temperature within a range, so the model sees varied illumination and generalises to real lighting.'},
+  sdg_samples:{short:'How many scenes to render. Each scene is captured by both cameras.',
+    long:'More images = a stronger dataset but longer render time. After quality filtering the final count is usually a bit lower than requested.'},
+  sdg_env:{short:'Background: plane (flat ground), true (full 3D scene), or false (void).',
+    long:'plane gives a clean floor, true places objects in the full factory environment (most realistic, routes results to exp2), false renders on empty background (exp0). The choice is encoded in the dataset name and the training exp folder.'},
+  sdg_res:{short:'Output image resolution. 640×480 is the recommended default.',
+    long:'Higher resolution captures more detail but renders slower and uses more disk/VRAM in training. 128×80 is for fast smoke tests only.'},
+  sdg_visibility:{guide:'GUIDE.md', short:'Discard frames where an object is hidden behind another by more than this much.',
+    long:'Uses Replicator occlusion data. At ≥95%, any object more than 5% occluded by another object causes the WHOLE frame to be dropped — never keeping an image with a poorly-visible object. Prevents the model from learning from ambiguous examples.'},
+  sdg_spawn:{guide:'GUIDE.md', short:'How far objects can be placed from the scene centre (metres).',
+    long:'Smaller keeps objects near the centre so they stay inside the camera view (fewer border cuts) — without changing their on-screen size (unlike moving the camera). 0.2 m is the validated default.'},
+  sdg_sep:{guide:'GUIDE.md', short:'Minimum distance between object centres — collision-aware placement.',
+    long:'Keeps objects from sitting on top of each other, which prevents occlusion at the source. Combined with a small spawn radius you get tight but non-overlapping scenes. 0.05 m default.'},
+  sdg_iou:{short:'Overlap filter threshold: drop a frame if two label boxes overlap by at least this IoU.',
+    long:'A safety net for extreme box collisions. With min-visibility on, real occlusion is already handled, so this rarely fires. 0.7 default.'},
+  sdg_trunc:{short:'Drop whole frames containing an object cut off by the image border.',
+    long:'A partially-out-of-frame object would have an inaccurate box, so the entire frame is discarded rather than kept with a bad label.'},
+  sdg_ovl:{short:'Enable the IoU overlap filter (uses the IoU value to the left).',
+    long:'Deletes image/label pairs whose boxes overlap too much. Turn off if you deliberately want crowded scenes.'},
+  sdg_spp:{guide:'HYPERPARAMETERS.md', short:'Ray samples per pixel — the main render quality/speed knob.',
+    long:'8 = fast iteration (the denoiser cleans the noise); 32–64 = final dataset quality. Higher = less noise but slower rendering.'},
+  sdg_bounces:{guide:'HYPERPARAMETERS.md', short:'Maximum light ray bounces — affects indirect lighting realism.',
+    long:'More bounces capture more reflected/indirect light (more realistic shadows and colour bleed) at the cost of render speed. 32 is a good default.'},
+  selftest:{guide:'GUIDE.md', short:'One-click health check of the whole pipeline. Run after any change.',
+    long:'Quick = static checks (configs, assets, class-ID registry, converter filters, routing) in ~10 s, no GPU. Full = also a real generation, training and AL loop. Green = the pipeline is healthy end-to-end.'},
+  // ----- Training -----
+  train_overview:{guide:'GUIDE.md', short:'Train a YOLOv12 detector on a generated dataset, configured by its AAS file.',
+    long:'Pick the dataset AAS (auto-created after generation), choose cameras and hyperparameters, and train. Each camera geometry trains as its own run so the two viewpoints stay separate. Results (weights, curves, confusion matrices) land in OD_training/results and appear in the Results tab.'},
+  train_aas:{short:'The AAS config describing the dataset and training parameters.',
+    long:'Dataset configs (auto-created after each generation) appear at the top. Selecting one trains on that dataset; values you set below are saved back into it (record mode).'},
+  train_cameras:{guide:'ACTIVE_LEARNING.md', short:'Which camera geometry to train. Each ticked camera trains as a separate run.',
+    long:'Replicator (top-down) and Replicator_01 (orbital) are different viewpoints kept as separate datasets. Train and compare them independently; ticking both produces two separate runs, not a merged one.'},
+  train_epochs:{short:'How many passes over the training data.',
+    long:'More epochs = better fit up to a point, then overfitting. 50–100 is typical for real training; 1–3 for quick checks. Empty = use the value stored in the AAS.'},
+  train_imgsz:{short:'Training image size (pixels).',
+    long:'Should match or relate to your dataset resolution. Larger sees more detail but uses more VRAM and is slower. 640 is standard.'},
+  train_batch:{short:'Images per training step.',
+    long:'Larger = faster and smoother gradients but more GPU memory. On 8 GB use 8–16 at 640 with YOLOv12-L, or -1 to auto-fit.'},
+  train_weights:{short:'Starting weights (default: YOLOv12-L).',
+    long:'The pretrained checkpoint to fine-tune from. YOLOv12-L is the project default; a smaller model trains faster for quick tests.'},
+  train_save:{short:'Checkpoint frequency — save a model every N epochs.',
+    long:'Lets you keep intermediate models and resume. -1 saves only the final/best.'},
+  // ----- Inference / harvest -----
+  inf_overview:{guide:'ACTIVE_LEARNING.md', short:'Run a trained model on real images and keep the most uncertain ones to label next.',
+    long:'This is the real-data side of Active Learning. The model predicts on your real images, scores each by uncertainty, and keeps the top-N most uncertain with predictions as pre-labels. You review/correct them (✏ Edit) and Accept into a REAL_ dataset for further training.'},
+  inf_model:{short:'The trained detector to run (any best.pt from Results, or a base weight).',
+    long:'Use a model trained on your synthetic data to find the real images it is least sure about — those are the most valuable to label.'},
+  inf_source:{short:'Folder of real, unlabelled images to scan. Use Browse to pick it.',
+    long:'All images in the folder are scored; the most uncertain are kept. Use the Browse button to navigate your drives instead of typing the path.'},
+  inf_top:{short:'How many of the most-uncertain images to keep for review.',
+    long:'The labelling budget for this harvest. Smaller = only the very hardest frames; larger = more candidates to review.'},
+  inf_conf:{short:'Detection confidence threshold during scoring.',
+    long:'Boxes below this confidence are ignored when computing uncertainty. Lower catches more tentative detections (more uncertainty signal).'},
 });
 applyInfoIcons();
 const _origShowTab = showTab;
