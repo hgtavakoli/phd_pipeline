@@ -99,8 +99,16 @@ def _reader(job):
             if datasets:
                 aas_name = generate_dataset_aas(datasets[0]["rel"], job.get("meta") or {})
                 job["lines"].append(f"--- AAS training config created/updated: AAS\\{aas_name} ---")
+                job.setdefault("meta", {})["dataset_rel"] = datasets[0]["rel"]
         except Exception as e:
             job["lines"].append(f"--- could not create dataset AAS: {e} ---")
+    # Provenance: record generation params (A) + run outcome (B) into the AAS.
+    try:
+        msgs = record_to_aas(job)
+        for m in msgs:
+            job["lines"].append(m)
+    except Exception as e:
+        job["lines"].append(f"--- AAS provenance write skipped: {e} ---")
 
 
 def start_job(name, cmd, cwd, meta=None):
@@ -169,6 +177,252 @@ def _aas_set_properties(node, targets):
     elif isinstance(node, list):
         for v in node:
             _aas_set_properties(v, targets)
+
+
+# --- AAS section read/write (provenance: generation params + run outcomes) -----
+
+def _aas_find_node(node, id_short):
+    """Return the first SubmodelElement dict whose idShort matches."""
+    if isinstance(node, dict):
+        if node.get("idShort") == id_short:
+            return node
+        for v in node.values():
+            r = _aas_find_node(v, id_short)
+            if r is not None:
+                return r
+    elif isinstance(node, list):
+        for v in node:
+            r = _aas_find_node(v, id_short)
+            if r is not None:
+                return r
+    return None
+
+
+def _aas_prop(id_short, value):
+    return {"idShort": id_short, "valueType": "xs:string",
+            "value": "" if value is None else str(value), "modelType": "Property"}
+
+
+def _aas_parent_collection(data):
+    """The container we attach provenance sections to: prefer ODOptimisation,
+    else the first submodel's submodelElements, else the root list."""
+    od = _aas_find_node(data, "ODOptimisation")
+    if od is not None:
+        od.setdefault("value", [])
+        return od["value"]
+    sms = data.get("submodels") if isinstance(data, dict) else None
+    if sms and isinstance(sms, list) and sms[0].get("submodelElements") is not None:
+        return sms[0]["submodelElements"]
+    return None
+
+
+def _aas_upsert_section(data, section_id, props):
+    """Create/update a SubmodelElementList `section_id` of flat properties."""
+    container = _aas_parent_collection(data)
+    if container is None:
+        return False
+    sec = next((e for e in container if isinstance(e, dict) and e.get("idShort") == section_id), None)
+    if sec is None:
+        sec = {"idShort": section_id, "typeValueListElement": "SubmodelElement",
+               "modelType": "SubmodelElementList", "value": []}
+        container.append(sec)
+    sec.setdefault("value", [])
+    existing = {e.get("idShort"): e for e in sec["value"] if isinstance(e, dict)}
+    for k, v in props.items():
+        if k in existing:
+            existing[k]["value"] = "" if v is None else str(v)
+        else:
+            sec["value"].append(_aas_prop(k, v))
+    return True
+
+
+def _aas_append_run(data, entry: dict):
+    """Append one run-outcome record (a SubmodelElementCollection) to the
+    append-only 'RunHistory' list — every update is kept, not overwritten."""
+    container = _aas_parent_collection(data)
+    if container is None:
+        return False
+    hist = next((e for e in container if isinstance(e, dict) and e.get("idShort") == "RunHistory"), None)
+    if hist is None:
+        hist = {"idShort": "RunHistory", "typeValueListElement": "SubmodelElement",
+                "modelType": "SubmodelElementList", "value": []}
+        container.append(hist)
+    hist.setdefault("value", [])
+    rid = "run_" + time.strftime("%Y%m%dT%H%M%S")
+    hist["value"].append({
+        "idShort": rid, "modelType": "SubmodelElementCollection",
+        "value": [_aas_prop(k, v) for k, v in entry.items()],
+    })
+    return True
+
+
+def _aas_read_record(aas_path):
+    """Read the provenance sections from a dataset AAS into a plain dict for the
+    dashboard: GenerationParameters, latest-stage Results, and RunHistory."""
+    try:
+        data = json.loads(Path(aas_path).read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+
+    def section(id_short):
+        node = _aas_find_node(data, id_short)
+        if not node or not node.get("value"):
+            return {}
+        return {e.get("idShort"): e.get("value") for e in node["value"]
+                if isinstance(e, dict) and e.get("modelType") == "Property"}
+
+    hist = _aas_find_node(data, "RunHistory")
+    runs = []
+    if hist and hist.get("value"):
+        for coll in hist["value"]:
+            if isinstance(coll, dict) and coll.get("value"):
+                runs.append({e.get("idShort"): e.get("value") for e in coll["value"]
+                             if isinstance(e, dict)})
+    return {
+        "generation": section("GenerationParameters"),
+        "results": section("Results"),
+        "active_learning": section("ActiveLearning"),
+        "continual_learning": section("ContinualLearning"),
+        "runs": runs,
+    }
+
+
+def _find_dataset_aas_path(rel_or_name):
+    """Locate the per-dataset AAS file for a dataset rel/name."""
+    if not rel_or_name:
+        return None
+    name = Path(rel_or_name).name
+    base = AAS_DIR / "datasets"
+    if base.exists():
+        cands = list(base.rglob(f"CA_Modul-OD_dataset_{name}.json"))
+        if cands:
+            return cands[0]
+    return None
+
+
+def _read_yolo_metrics(csv_path):
+    """Final mAP50 / mAP50-95 from a YOLO results.csv (training / CL)."""
+    import csv
+    try:
+        rows = list(csv.DictReader(open(csv_path)))
+        if not rows:
+            return {}
+        last = rows[-1]
+        def g(key):
+            for c in last:
+                if c.strip() == key:
+                    try:
+                        return round(float(last[c]), 4)
+                    except ValueError:
+                        return None
+            return None
+        return {"map50": g("metrics/mAP50(B)"), "map50_95": g("metrics/mAP50-95(B)"),
+                "epochs": len(rows)}
+    except Exception:
+        return {}
+
+
+def _read_al_metrics(csv_path):
+    """Best mAP50 + gain from an al_summary.csv."""
+    import csv
+    try:
+        rows = list(csv.DictReader(open(csv_path)))
+        vals = [float(r["mAP50"]) for r in rows if r.get("mAP50") not in (None, "", "nan")]
+        if not vals:
+            return {"rounds": len(rows)}
+        gain = round(max(vals) - vals[0], 4)
+        return {"map50": round(max(vals), 4), "gain": gain, "rounds": len(rows) - 1}
+    except Exception:
+        return {}
+
+
+def record_to_aas(job):
+    """Write provenance into the dataset AAS at job completion:
+      A) GenerationParameters for SDG runs,
+      B) a Results summary + an append-only RunHistory entry for every stage.
+    Returns log messages."""
+    meta = job.get("meta") or {}
+    stage = meta.get("stage")
+    if not stage:
+        return []
+    msgs = []
+
+    # locate the dataset AAS to write into
+    aas_path = None
+    if stage == "SDG":
+        aas_path = _find_dataset_aas_path(meta.get("dataset_rel"))
+    elif stage == "training":
+        af = meta.get("aas_file", "")
+        cand = (AAS_DIR / af)
+        aas_path = cand if cand.exists() else _find_dataset_aas_path(af)
+    elif stage == "AL":
+        aas_path = _find_dataset_aas_path(meta.get("rel"))
+    elif stage == "CL":
+        aas_path = _find_dataset_aas_path(meta.get("new_data_rel"))
+    if not aas_path or not Path(aas_path).exists():
+        return msgs
+
+    data = json.loads(Path(aas_path).read_text(encoding="utf-8-sig"))
+    ok = job["returncode"] == 0
+    now = time.strftime("%Y-%m-%dT%H:%M:%S")
+    duration = int(time.time() - job.get("started", time.time()))
+    entry = {"stage": stage, "status": "success" if ok else f"failed({job['returncode']})",
+             "finished_at": now, "duration_s": duration}
+
+    # A) generation parameters
+    if stage == "SDG":
+        keys = ["mode", "light", "samples", "env", "width", "height", "min_visibility",
+                "spawn_radius", "min_separation", "iou_threshold", "drop_truncated",
+                "filter_overlaps", "seed", "renderer", "spp", "max_bounces", "denoiser"]
+        gen = {k: meta.get(k) for k in keys if meta.get(k) is not None}
+        if meta.get("components"):
+            gen["components"] = ",".join(meta["components"])
+        gen["generated_at"] = now
+        try:
+            d = ROOT / meta.get("dataset_rel", "")
+            gen["final_images"] = sum(1 for _ in _iter_images(d)) if d.is_dir() else None
+        except Exception:
+            pass
+        _aas_upsert_section(data, "GenerationParameters", gen)
+        if gen.get("final_images") is not None:
+            entry["final_images"] = gen["final_images"]
+
+    # B) outcomes / metrics
+    if ok:
+        metrics = {}
+        if stage in ("training", "CL"):
+            csvp = _newest_results_csv(stage, aas_path)
+            if csvp:
+                metrics = _read_yolo_metrics(csvp)
+                best = csvp.parent / "weights" / "best.pt"
+                if best.exists():
+                    metrics["model_path"] = str(best)
+        elif stage == "AL":
+            csvp = _newest(AL_DIR / "output", "al_summary.csv")
+            if csvp:
+                metrics = _read_al_metrics(csvp)
+        metrics = {k: v for k, v in metrics.items() if v is not None}
+        if metrics:
+            entry.update(metrics)
+            _aas_upsert_section(data, "Results", {"stage": stage, "updated_at": now, **metrics})
+
+    _aas_append_run(data, entry)
+    Path(aas_path).write_text(json.dumps(data, indent=1), encoding="utf-8")
+    msgs.append(f"--- AAS provenance updated: {Path(aas_path).name} ({stage}) ---")
+    return msgs
+
+
+def _newest(root, pattern):
+    if not Path(root).exists():
+        return None
+    files = list(Path(root).rglob(pattern))
+    return max(files, key=lambda f: f.stat().st_mtime) if files else None
+
+
+def _newest_results_csv(stage, aas_path):
+    if stage == "CL":
+        return _newest(CL_DIR / "results" / "cl_runs", "results.csv")
+    return _newest(OD_DIR / "results", "results.csv")
 
 
 def generate_dataset_aas(dataset_rel, meta=None):
@@ -979,6 +1233,19 @@ class Handler(BaseHTTPRequestHandler):
             # Master cross-stage defaults (pipeline.yaml) for the dashboard forms.
             return self._json(load_defaults())
 
+        if route == "/api/dataset_aas":
+            # Full AAS provenance record for a dataset: generation params, latest
+            # results, AL/CL params, and the append-only run history. The
+            # dashboard fetches this so all info is sourced from the AAS.
+            rel = q.get("rel", [""])[0]
+            aas = _find_dataset_aas_path(rel)
+            if not aas:
+                return self._json({"error": "no AAS record for this dataset yet", "found": False})
+            rec = _aas_read_record(aas)
+            rec["found"] = True
+            rec["aas_file"] = str(aas.relative_to(ROOT))
+            return self._json(rec)
+
         if route == "/api/cl_classes":
             # Registry split into "known by a typical model" vs available to add.
             return self._json({"registry": _registry_classes()})
@@ -1086,7 +1353,7 @@ class Handler(BaseHTTPRequestHandler):
                 cmd = build_sdg_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job("SDG generation", cmd, SMARTSDG, meta=payload)
+            ok, err = start_job("SDG generation", cmd, SMARTSDG, meta={**payload, "stage": "SDG"})
             return self._json({"ok": ok, "error": err})
 
         if route == "/api/delete_dataset":
@@ -1123,7 +1390,7 @@ class Handler(BaseHTTPRequestHandler):
                 cmd = build_train_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job("OD training", cmd, OD_DIR)
+            ok, err = start_job("OD training", cmd, OD_DIR, meta={**payload, "stage": "training"})
             return self._json({"ok": ok, "error": err})
 
         if route == "/api/run_harvest":
@@ -1191,7 +1458,8 @@ class Handler(BaseHTTPRequestHandler):
                 cmd, n_pool, n_val = build_al_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR)
+            ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR,
+                                meta={**payload, "stage": "AL"})
             return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
 
         if route == "/api/stop_stream":
@@ -1209,7 +1477,8 @@ class Handler(BaseHTTPRequestHandler):
                 cmd, meta = build_cl_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job(f"Continual Learning (+{','.join(meta['new_classes'])})", cmd, CL_DIR)
+            ok, err = start_job(f"Continual Learning (+{','.join(meta['new_classes'])})", cmd, CL_DIR,
+                                meta={**payload, "stage": "CL", **meta})
             return self._json({"ok": ok, "error": err, **meta})
 
         if route == "/api/run_test":

@@ -1006,10 +1006,34 @@ async function loadDatasets(){
   $('dsTable').querySelector('tbody').innerHTML = list.map(d=>
     `<tr><td>${d.name}</td><td>${d.images}</td><td>${d.modified}</td>
      <td><button class="secondary" onclick="preview('${d.rel.replace(/\\/g,'\\\\')}','${d.name}')">Preview</button>
+         <button class="secondary" onclick="showAasRecord('${d.rel.replace(/\\/g,'\\\\')}','${d.name}')">📋 AAS record</button>
          <button class="secondary" onclick="openPath('${d.rel.replace(/\\/g,'\\\\')}')">Open folder</button>
          <button class="secondary" onclick="makeAas('${d.rel.replace(/\\/g,'\\\\')}')">Create AAS</button>
          <button class="danger" onclick="deleteDataset('${d.rel.replace(/\\/g,'\\\\')}','${d.name}')">🗑 Delete</button></td></tr>`).join('')
     || '<tr><td colspan="4" class="muted">No datasets yet — run a generation.</td></tr>';
+}
+function _kvTable(obj){
+  const keys=Object.keys(obj||{});
+  if(!keys.length) return '<span class="muted">— none recorded —</span>';
+  return '<table style="width:auto">'+keys.map(k=>`<tr><td class="muted">${k}</td><td><b>${obj[k]}</b></td></tr>`).join('')+'</table>';
+}
+async function showAasRecord(rel,name){
+  const r = await fetch('/api/dataset_aas?rel='+encodeURIComponent(rel.replace(/\\\\/g,'\\'))).then(x=>x.json());
+  const area=$('previewArea');
+  if(!r.found){ area.innerHTML=`<h3>AAS record — ${name}</h3><p class="muted">${r.error||'no record'}</p>`; return; }
+  let html=`<h3>📋 AAS record — ${name} <span class="muted">(${r.aas_file})</span></h3>`;
+  html+=`<div style="display:flex;flex-wrap:wrap;gap:24px">`;
+  html+=`<div><h4>Generation parameters</h4>${_kvTable(r.generation)}</div>`;
+  html+=`<div><h4>Latest results</h4>${_kvTable(r.results)}</div>`;
+  html+=`</div>`;
+  if(r.runs && r.runs.length){
+    const cols=['stage','status','finished_at','duration_s','map50','map50_95','gain','final_images','epochs'];
+    html+=`<h4 style="margin-top:14px">Run history (${r.runs.length}) — every update, newest last</h4>`;
+    html+='<table><thead><tr>'+cols.map(c=>`<th>${c}</th>`).join('')+'</tr></thead><tbody>';
+    html+=r.runs.map(run=>'<tr>'+cols.map(c=>`<td>${run[c]!=null?run[c]:''}</td>`).join('')+'</tr>').join('');
+    html+='</tbody></table>';
+  }
+  area.innerHTML=html;
 }
 async function deleteDataset(rel,name){
   if(!confirm(`Permanently delete dataset "${name}"?\n\nThis removes the YOLO dataset, its raw render output, and its auto-generated AAS config from disk.`)) return;

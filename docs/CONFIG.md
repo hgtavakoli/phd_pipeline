@@ -36,6 +36,24 @@ pipeline.yaml (default)  ->  dashboard form field  ->  user may override  ->
    run command  ->  written into the dataset AAS (record)  ->  result
 ```
 
+## What the AAS records (provenance)
+
+Each per-dataset AAS is not just an input config — it is an **operational record**.
+The dashboard writes into it automatically:
+
+- **`GenerationParameters`** — the exact SDG settings used (mode, classes, light,
+  resolution, visibility/spawn/separation/IoU filters, seed, renderer, final
+  image count). → a dataset is reproducible from its AAS alone.
+- **`ActiveLearning` / `ContinualLearning`** — the parameters of the latest AL/CL
+  run on that dataset (record mode).
+- **`Results`** — the latest outcome metrics (mAP50, mAP50-95, gain, model path).
+- **`RunHistory`** — an **append-only** log: one entry per completed run (stage,
+  status, finished_at, duration, metrics). Every update is kept, not overwritten.
+
+The dashboard's **Datasets → 📋 AAS record** button reads all of this back via
+`/api/dataset_aas`, so the pipeline can be tracked entirely from the AAS and the
+record is consumable by other modules (IEC 63278).
+
 ## Legacy / unused configs
 
 `active_learning/legacy/config_yolo.py` and the CLI-only YAMLs under
