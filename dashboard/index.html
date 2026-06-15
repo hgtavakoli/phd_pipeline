@@ -329,7 +329,7 @@
     <h2>⑤ Continual Learning — add new classes without forgetting <span data-info="cl_overview"></span></h2>
     <p class="muted">Teach an existing model a <b>new object class</b> while keeping what it already knows (class-incremental). Uses replay of old-class images mixed into each batch to prevent catastrophic forgetting.</p>
     <div class="row">
-      <div><label>Base model to extend <span data-info="cl_model"></span></label><select id="clModel" style="min-width:260px"></select></div>
+      <div><label>Base model to extend <span data-info="cl_model"></span></label><select id="clModel" onchange="clOnModelChange()" style="min-width:260px"></select></div>
       <div><label>Strategy <span data-info="cl_strategy"></span></label>
         <select id="clStrategy"><option value="replay" selected>replay (balanced rehearsal)</option></select></div>
       <div><label>Replay ratio <span data-info="cl_replay"></span></label><input id="clRatio" type="number" step="0.05" min="0" max="0.9" value="0.3" style="width:80px"></div>
@@ -484,14 +484,30 @@ function showTab(name){
 
 // ---------- continual learning ----------
 let CL_DATASETS = [];
+let CL_KNOWN = [];  // classes the selected base model already knows
+function clRenderClasses(){
+  $('clNewClasses').innerHTML = COMPONENTS.map(c=>{
+    const known = CL_KNOWN.includes(c);
+    return `<label class="chips" title="${known?'already known by this model':'available to add'}" style="display:inline-flex;${known?'opacity:.38;cursor:not-allowed':''}">
+      <input type="checkbox" class="clNew" value="${c}" ${known?'disabled':''} onchange="clUpdatePlan()"> ${c}${known?' ✓':''}</label>`;
+  }).join('');
+}
+function clOnModelChange(){
+  const m=$('clModel').value;
+  if(!m){ CL_KNOWN=[]; clRenderClasses(); return; }
+  fetch('/api/model_classes?model='+encodeURIComponent(m)).then(r=>r.json()).then(d=>{
+    // only gray out classes that are in OUR registry (ignore COCO names from base weights)
+    CL_KNOWN=(d.names||[]).filter(n=>COMPONENTS.includes(n));
+    clRenderClasses(); clUpdatePlan();
+  });
+}
 function clInit(){
-  $('clNewClasses').innerHTML = COMPONENTS.map(c=>
-    `<label class="chips" style="display:inline-flex"><input type="checkbox" class="clNew" value="${c}" onchange="clUpdatePlan()"> ${c}</label>`).join('');
-  // models from results
+  clRenderClasses();
   fetch('/api/results').then(r=>r.json()).then(list=>{
     const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
     fetch('/api/weights').then(r=>r.json()).then(ws=>{
       $('clModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— train a model first —</option>';
+      clOnModelChange();
     });
   });
   clLoadDatasets();
@@ -575,7 +591,7 @@ function lvStart(){
   const url='/stream?model='+encodeURIComponent(model)+'&source='+encodeURIComponent(src)+'&conf='+(+$('lvConf').value)+'&t='+Date.now();
   $('lvView').innerHTML=`<img src="${url}" style="max-width:100%;border:1px solid var(--border);border-radius:8px" onerror="$('lvView').innerHTML='<p class=muted>Could not open the source (camera in use, or bad path).</p>'">`;
 }
-function lvStop(){ const v=$('lvView'); if(v){ v.innerHTML=''; } }
+function lvStop(){ const v=$('lvView'); if(v){ v.innerHTML=''; } fetch('/api/stop_stream',{method:'POST'}).catch(()=>{}); }
 
 // ---------- AL harvest (inference-time, real images) ----------
 function loadHarvestModels(){

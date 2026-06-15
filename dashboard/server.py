@@ -921,6 +921,26 @@ class Handler(BaseHTTPRequestHandler):
             # Registry split into "known by a typical model" vs available to add.
             return self._json({"registry": _registry_classes()})
 
+        if route == "/api/model_classes":
+            # Class names a trained model already knows (so the CL tab can gray
+            # them out — only NEW classes should be selectable to add).
+            model = q.get("model", [""])[0]
+            mpath = (OD_DIR / Path(model).name) if model and not Path(model).is_absolute() else Path(model)
+            if not Path(mpath).exists():
+                cands = list(OD_DIR.rglob(Path(model).name)) if model else []
+                mpath = cands[0] if cands else mpath
+            if not Path(mpath).exists():
+                return self._json({"names": [], "error": "model not found"})
+            try:
+                import torch
+                ckpt = torch.load(str(mpath), map_location="cpu", weights_only=False)
+                m = ckpt.get("model") if isinstance(ckpt, dict) else ckpt
+                names = getattr(m, "names", None) or {}
+                known = list(names.values()) if isinstance(names, dict) else list(names)
+                return self._json({"names": known})
+            except Exception as e:
+                return self._json({"names": [], "error": str(e)})
+
         if route == "/api/cameras":
             # Camera-geometry subfolders of a dataset (for separate AL/training).
             try:
@@ -1119,6 +1139,16 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"ok": False, "error": str(e)}, 400)
             ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR)
             return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
+
+        if route == "/api/stop_stream":
+            # Explicitly end any live stream: bumping the token makes the
+            # capture loop exit on its next iteration and release the camera
+            # (clearing the <img> alone doesn't reliably do this on Windows).
+            global _stream_token, _stream_active
+            with _stream_lock:
+                _stream_token += 1
+            _stream_active = False
+            return self._json({"ok": True})
 
         if route == "/api/run_cl":
             try:
