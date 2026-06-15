@@ -618,6 +618,33 @@ class Handler(BaseHTTPRequestHandler):
                                 "label": str((d / "labels" / (img.stem + ".txt")).relative_to(ROOT))})
             return self._json(res)
 
+        if route == "/api/listdir":
+            # Server-side folder browser for picking a real-images directory.
+            import string
+            raw = q.get("path", [""])[0]
+            try:
+                if not raw:
+                    # top level: list drive letters on Windows
+                    drives = [f"{d}:\\" for d in string.ascii_uppercase if os.path.exists(f"{d}:\\")]
+                    return self._json({"path": "", "parent": None, "dirs": drives,
+                                       "images": 0})
+                p = Path(raw)
+                if not p.is_dir():
+                    return self._json({"error": "not a directory"}, 400)
+                dirs, n_imgs = [], 0
+                for entry in sorted(p.iterdir(), key=lambda x: x.name.lower()):
+                    try:
+                        if entry.is_dir():
+                            dirs.append(str(entry))
+                        elif entry.suffix.lower() in IMG_EXTS:
+                            n_imgs += 1
+                    except OSError:
+                        continue
+                return self._json({"path": str(p), "parent": str(p.parent) if p.parent != p else None,
+                                   "dirs": dirs, "images": n_imgs})
+            except Exception as e:
+                return self._json({"error": str(e)}, 400)
+
         if route == "/api/cameras":
             # Camera-geometry subfolders of a dataset (for separate AL/training).
             try:

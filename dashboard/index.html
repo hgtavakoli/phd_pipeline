@@ -52,6 +52,7 @@
       box-shadow:0 6px 24px rgba(0,0,0,.5)}
   #infoPop .more{color:var(--accent2);cursor:pointer;font-size:.78rem;margin-top:6px;display:inline-block}
   #infoPop .long{display:none;margin-top:8px;color:var(--text2);line-height:1.5;border-top:1px solid var(--border);padding-top:8px}
+  .fpEntry:hover{background:var(--panel2);border-radius:4px}
   .cmdline{color:var(--accent);font-family:Consolas,monospace;font-size:.78rem;background:#0a0d12;border:1px solid var(--border);border-radius:6px;padding:8px;margin-top:8px;white-space:pre-wrap;word-break:break-all}
   #docText{max-height:600px}
   .doclist button{margin:0 6px 6px 0}
@@ -61,6 +62,20 @@
 
 <!-- ============ INFO POPOVER ============ -->
 <div id="infoPop"></div>
+
+<!-- ============ FOLDER PICKER MODAL ============ -->
+<div id="folderModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:120;align-items:center;justify-content:center">
+  <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;width:640px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column">
+    <strong style="color:var(--text);margin-bottom:8px">Pick the real-images folder</strong>
+    <div id="fpPath" class="muted" style="font-family:Consolas,monospace;word-break:break-all;margin-bottom:6px"></div>
+    <div id="fpList" style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px;min-height:200px"></div>
+    <div id="fpImgs" class="muted" style="margin-top:6px"></div>
+    <div class="row" style="margin-top:10px">
+      <button class="primary" onclick="fpUse()">✔ Use this folder</button>
+      <button class="secondary" onclick="$('folderModal').style.display='none'">Cancel</button>
+    </div>
+  </div>
+</div>
 
 <!-- ============ LABEL EDITOR MODAL ============ -->
 <div id="editorModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:100;align-items:center;justify-content:center">
@@ -280,7 +295,8 @@
     <p class="muted">Run a trained model over a folder of <b>real, unlabeled</b> images. The most <b>uncertain</b> frames (where the model is least sure) are kept with the model's predictions as pre-labels — these are the most valuable real images to label next.</p>
     <div class="row">
       <div><label>Model (best.pt)</label><select id="hModel" style="min-width:200px"></select></div>
-      <div><label>Real images folder (absolute path)</label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:340px"></div>
+      <div><label>Real images folder</label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:300px">
+        <button class="secondary" style="padding:5px 10px" onclick="openFolderPicker()">📁 Browse…</button></div>
       <div><label>Keep top-N uncertain</label><input id="hTop" type="number" min="1" value="50" style="width:90px"></div>
       <div><label>Conf threshold</label><input id="hConf" type="number" step="0.05" value="0.10" style="width:80px"></div>
       <button class="primary" id="btnHarvest" onclick="runHarvest()">▶ Harvest</button>
@@ -304,6 +320,7 @@
     <div class="doclist">
       <button class="secondary" onclick="loadDoc('README.md')">README</button>
       <button class="secondary" onclick="loadDoc('HYPERPARAMETERS.md')">Hyperparameters</button>
+      <button class="secondary" onclick="loadDoc('ACTIVE_LEARNING.md')">Active Learning guide</button>
       <button class="secondary" onclick="loadDoc('INSTALL.md')">Install</button>
       <button class="secondary" onclick="loadDoc('PIPELINE.md')">Pipeline</button>
       <button class="secondary" onclick="loadDoc('CHANGELOG.md')">Changelog</button>
@@ -345,18 +362,21 @@ const $ = id => document.getElementById(id);
 const INFO = {};  // key -> {short, long}
 function info(e, key){
   e.stopPropagation();
+  e.preventDefault();   // so an info icon inside a <label> doesn't toggle its checkbox
   const d = INFO[key] || {short:'(no description)', long:''};
   const pop = $('infoPop');
+  const guide = d.guide ? `<div style="margin-top:8px"><a href="#" onclick="openGuide('${d.guide}');return false" style="color:var(--accent)">📖 Open full guide →</a></div>` : '';
   pop.innerHTML = `<div>${d.short}</div>` +
-    (d.long ? `<span class="more" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Read more ▾</span><div class="long">${d.long}</div>` : '');
+    (d.long ? `<span class="more" onclick="this.nextElementSibling.style.display='block';this.style.display='none'">Read more ▾</span><div class="long">${d.long}</div>` : '') + guide;
   pop.style.display='block';
   const r = e.target.getBoundingClientRect();
   let left = r.left, top = r.bottom+6;
   pop.style.left = Math.min(left, window.innerWidth-360)+'px';
   pop.style.top = Math.min(top, window.innerHeight-120)+'px';
 }
-document.addEventListener('click', e=>{ if(!e.target.classList.contains('ib')) $('infoPop').style.display='none'; });
+document.addEventListener('click', e=>{ if(!e.target.classList.contains('ib') && !e.target.closest('#infoPop')) $('infoPop').style.display='none'; });
 function ib(key){ return `<span class="ib" onclick="info(event,'${key}')">i</span>`; }
+function openGuide(docName){ $('infoPop').style.display='none'; showTab('docs'); loadDoc(docName); window.scrollTo(0,0); }
 // inject info icons into elements marked with data-info after load
 function applyInfoIcons(){
   document.querySelectorAll('[data-info]').forEach(el=>{
@@ -396,6 +416,26 @@ function loadHarvests(){
     loadHarvestItems();
   });
 }
+// ---------- folder picker (server-side filesystem browser) ----------
+let fpCurrent = "";
+function openFolderPicker(){ $('folderModal').style.display='flex'; fpBrowse($('hSource').value.trim() || ""); }
+async function fpBrowse(path){
+  const d = await fetch('/api/listdir?path='+encodeURIComponent(path)).then(r=>r.json());
+  if(d.error){ alert(d.error); return; }
+  fpCurrent = d.path;
+  $('fpPath').textContent = d.path || 'This PC (drives)';
+  let html = '';
+  if(d.parent!==null) html += `<div class="fpEntry" onclick="fpBrowse('${(d.parent||'').replace(/\\/g,'\\\\')}')" style="cursor:pointer;padding:4px 6px">⬆ ..</div>`;
+  html += d.dirs.map(dir=>`<div class="fpEntry" onclick="fpBrowse('${dir.replace(/\\/g,'\\\\')}')" style="cursor:pointer;padding:4px 6px">📁 ${dir.split(/[\\/]/).pop()||dir}</div>`).join('');
+  $('fpList').innerHTML = html || '<div class="muted">No subfolders.</div>';
+  $('fpImgs').textContent = d.path ? `${d.images} image(s) directly in this folder` : '';
+}
+function fpUse(){
+  if(!fpCurrent){ alert('Navigate into a folder first'); return; }
+  $('hSource').value = fpCurrent;
+  $('folderModal').style.display='none';
+}
+
 async function runHarvest(){
   const p={model:$('hModel').value, source:$('hSource').value.trim(), top:+$('hTop').value, conf:+$('hConf').value, num_classes:COMPONENTS.length};
   if(!p.source){alert('Enter the real-images folder path');return;}
@@ -851,13 +891,13 @@ fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').tex
 
 // ---------- info-button content (short hint + read-more) ----------
 Object.assign(INFO, {
-  al_overview:{short:'Active Learning labels fewer images for the same accuracy by letting the model choose what to label next.',
+  al_overview:{guide:'ACTIVE_LEARNING.md', short:'Active Learning labels fewer images for the same accuracy by letting the model choose what to label next.',
     long:'Instead of labelling everything, you train on a small subset, then each round the trained model scores the remaining pool and the strategy selects the most informative images to add. Over a few rounds the accuracy curve usually rises faster than random labelling — so you reach a target mAP with far fewer labelled images. Here the pool is your synthetic dataset; validation is on real images to measure sim-to-real transfer.'},
   al_dataset:{short:'The generated dataset whose images form the unlabelled pool to select from.',
     long:'AL starts from this pool as if it were unlabelled and picks a subset each round. Generate a dataset in the Run tab first; bigger pools give the strategy more to choose from.'},
-  al_camera:{short:'Which camera geometry to use. The two cameras are kept completely separate.',
+  al_camera:{guide:'ACTIVE_LEARNING.md', short:'Which camera geometry to use. The two cameras are kept completely separate.',
     long:'SDG renders every scene from two cameras: Replicator (fixed top-down) and Replicator_01 (random orbital). These are different viewpoints, so a model trained on one should be evaluated on that geometry. Pick one camera to run and compare them independently; "both" merges them (not recommended when you want a per-geometry comparison). Each choice is logged under its own run so the gain curves never mix.'},
-  al_strategy:{short:'How the next images are chosen each round.',
+  al_strategy:{guide:'ACTIVE_LEARNING.md', short:'How the next images are chosen each round.',
     long:'random = pick uniformly (the baseline every method must beat). entropy = pick where the model is least confident (uncertainty only). ppal_box = uncertainty + diversity by bounding-box geometry. ppal_feat = uncertainty + diversity by appearance embeddings from the detector (recommended — avoids selecting many look-alike images). Run each on the same dataset+camera to produce the comparison.'},
   al_balance:{short:'Boosts images containing classes that are still rare in the labelled set.',
     long:'Real pools are often class-imbalanced. With this on, images that contain under-represented classes get a selection bonus, so the labelled set fills in rare classes faster.'},
@@ -873,7 +913,7 @@ Object.assign(INFO, {
     long:'Larger = faster but more GPU memory. On an 8 GB RTX 2080, 8–16 at 640px with YOLOv12-L is safe; use -1 to let Ultralytics auto-fit.'},
   al_weights:{short:'Starting weights for round 0 (default: YOLOv12).',
     long:'The pretrained checkpoint the first round fine-tunes from. YOLOv12-L is the project default; a smaller model trains faster for quick tests.'},
-  al_gain:{short:'The payoff: accuracy vs number of labelled images, per run.',
+  al_gain:{guide:'ACTIVE_LEARNING.md', short:'The payoff: accuracy vs number of labelled images, per run.',
     long:'Each line is one AL run. The gain column is best mAP50 minus the round-0 mAP50. Compare a strategy line against the random baseline at the same number of labelled images: the gap is what AL bought you. Compare the two camera geometries as separate lines.'},
 });
 applyInfoIcons();
