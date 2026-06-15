@@ -353,6 +353,7 @@
     <h2>Project documentation</h2>
     <div class="doclist">
       <button class="primary" onclick="loadDoc('GUIDE.md')">📖 Full User Guide</button>
+      <button class="primary" onclick="window.open('/img?p='+encodeURIComponent('docs\\SmartSDG_Guide.pdf'),'_blank')">⬇ Download PDF guide (with screenshots)</button>
       <button class="secondary" onclick="loadDoc('README.md')">README</button>
       <button class="secondary" onclick="loadDoc('HYPERPARAMETERS.md')">Hyperparameters</button>
       <button class="secondary" onclick="loadDoc('ACTIVE_LEARNING.md')">Active Learning guide</button>
@@ -959,6 +960,8 @@ function loadAasList(){
 }
 loadAasList();
 fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').textContent='v'+v.trim());
+// deep-link: ?tab=NAME opens that tab on load (used for documentation screenshots)
+(function(){ const t=new URLSearchParams(location.search).get('tab'); if(t) try{ showTab(t); }catch(e){} })();
 
 // ---------- info-button content (short hint + read-more) ----------
 Object.assign(INFO, {

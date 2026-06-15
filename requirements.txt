@@ -25,3 +25,7 @@ scipy>=1.12
 
 # Plotting (paper_visualisation)
 matplotlib>=3.8
+
+# Docs: building the PDF user guide (scripts/build_guide_pdf.py); uses headless
+# Microsoft Edge for screenshots + PDF, so no extra binary needed.
+markdown>=3.5
