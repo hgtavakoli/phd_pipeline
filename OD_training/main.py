@@ -3,12 +3,37 @@
 import argparse
 import yaml
 import os
+import re
 from pathlib import Path
 
 from src.aas_od_config_converter import generate_config
 from src.train_eval import trainer_aas as trainer
 from src.train_eval import evaluator
 from src.common import distributed_utils
+
+_WIN_ABS = re.compile(r'^[A-Za-z]:[/\\]')
+
+
+def _translate_win_paths(config: dict) -> None:
+    """On Linux (Docker), rewrite Windows host paths in config['paths'] to container mounts.
+    Relies on SMARTSDG_WIN_ROOT / SMARTSDG_WIN_VAL_REAL env vars injected by server.py."""
+    if os.name == 'nt':
+        return
+    win_root = os.environ.get('SMARTSDG_WIN_ROOT', '').replace('\\', '/')
+    win_val = os.environ.get('SMARTSDG_WIN_VAL_REAL', '').replace('\\', '/')
+
+    def translate(s: str) -> str:
+        if not isinstance(s, str) or not _WIN_ABS.match(s):
+            return s
+        p = s.replace('\\', '/')
+        if win_root and p.startswith(win_root):
+            return '/workspace' + p[len(win_root):]
+        if win_val and p.startswith(win_val):
+            return '/valdata' + p[len(win_val):]
+        return s
+
+    if 'paths' in config:
+        config['paths'] = {k: translate(v) for k, v in config['paths'].items()}
 
 
 def parse_sdg_metadata_from_path(data_path_string: str) -> dict:
@@ -23,7 +48,7 @@ def parse_sdg_metadata_from_path(data_path_string: str) -> dict:
     ENV_SUFFIXES = {'plane', 'withenv', 'withoutenv', 'noenv'}
     LIGHT_MODES = {'Low', 'Medium', 'High', 'S', 'M', 'L'}
     try:
-        dir_name = Path(data_path_string).name
+        dir_name = Path(data_path_string.replace('\\', '/')).name.rstrip('/')
         parts = dir_name.split('_')
         metadata = {'raw_name': dir_name}
         metadata['mode'] = parts[0]
@@ -55,6 +80,8 @@ def main(args):
     # --- 2. Load Base Configuration ---
     with open(args.config, 'r') as f:
         config = yaml.safe_load(f)
+
+    _translate_win_paths(config)
 
     # --- 3. Dynamically Generate Paths (CRUCIAL FOR BOTH MODES) ---
     # This block MUST run for both 'train' and 'evaluate' modes to ensure

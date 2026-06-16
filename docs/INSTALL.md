@@ -1,149 +1,189 @@
-﻿# Installation Guide
+# Installation Guide
 
-This guide covers two environments:
-- **Environment A** â€” SDG (Synthetic Data Generation) runs inside a Docker container on a Linux machine with an NVIDIA GPU
-- **Environment B** â€” OD / AL / CL / Inference run as plain Python on any machine with a GPU (Linux or Windows)
+Two setup paths are available. **Docker is recommended** for any machine except
+the one running Isaac Sim — it requires no Python environment management and is
+fully reproducible.
 
----
-
-## Prerequisites
-
-### Hardware
-- **NVIDIA RTX GPU** (RTX 20-series or later) â€” RTX 2080 8GB confirmed working
-- 16 GB RAM minimum
-- 50 GB free disk space for datasets and model checkpoints
-
-### Software
-| Component | Software | Installed Version |
-|-----------|----------|-------------------|
-| SDG | NVIDIA Isaac Sim 4.5 (Windows native) | 4.5.0-rc.36 |
-| SDG | NVIDIA Driver | 576.80+ |
-| OD / AL / CL | Python | 3.10 |
-| OD / AL / CL | PyTorch | 2.3+ |
-| OD / AL / CL | Ultralytics (YOLOv8/12) | 8.2+ |
-
-> **No Docker required.** Isaac Sim is installed natively at `C:\Users\hota02\Documents\omniverse`
+```
+  SDG (Isaac Sim)            →  native install only (Windows or Linux)
+  OD / AL / CL / Inference   →  Docker  ← recommended
+                                 OR conda env (if Docker is not available)
+```
 
 ---
 
-## Part A â€” SDG Setup (Isaac Sim â€” Windows Native)
+## Hardware requirements
 
-Isaac Sim is **already installed** at `C:\Users\hota02\Documents\omniverse`.  
-Python is at `C:\Users\hota02\Documents\omniverse\kit\python\python.exe` (invoked via `python.bat`).
+| Component | Minimum |
+|---|---|
+| GPU | NVIDIA RTX 20-series or later (RTX 2080 8 GB confirmed) |
+| RAM | 16 GB |
+| Disk | 50 GB free (datasets + model weights) |
+| NVIDIA driver | 525+ |
 
-### Step 1 â€” Verify Isaac Sim
+---
+
+## Part A — SDG Setup (Isaac Sim — always native)
+
+Isaac Sim cannot run in Docker on Windows. Install it natively.
+
+**Confirmed working install:** `C:\Users\hota02\Documents\omniverse` (Isaac Sim 4.5.0-rc.36)
+
+### Verify
 
 ```bat
 C:\Users\hota02\Documents\omniverse\python.bat --version
-:: Should print: Python 3.10.x
-```
+:: Python 3.10.x
 
-### Step 2 â€” Verify GPU
-
-```bat
 nvidia-smi
-:: Should show: RTX 2080 Max-Q, CUDA 12.x
+:: RTX 2080 Max-Q, CUDA 12.x
 ```
 
-### Step 3 â€” Run a quick SDG test (5 images)
+### Quick SDG test (5 images)
 
 ```bat
-cd C:\Users\hota02\Documents\SDG_v2\SmartSDG
-
+cd SmartSDG
 C:\Users\hota02\Documents\omniverse\python.bat main.py ^
   --config "src\config\config.yaml" ^
-  --component_class GlueGun ^
-  --light_mode Medium ^
-  --num_samples 5 ^
-  --load_env plane ^
-  --width 1280 ^
-  --height 800 ^
-  --convert_to_yolo
+  --component_class GlueGun --light_mode Medium ^
+  --num_samples 5 --load_env plane ^
+  --width 640 --height 480 --convert_to_yolo
 ```
 
-> `--width` / `--height` set the render *and* YOLO label resolution for the whole run (default from `config.yaml` is 128Ã—80 â€” too small for serious training; use 1280Ã—800).  
-> Use `--multi_object` instead of `--component_class` to place **all** components in every scene.
+Output: `SmartSDG\Datasets\yolo_experiments\SINGLE_GlueGun_Medium_plane\`
 
-> First run takes several minutes â€” Isaac Sim compiles shaders. Subsequent runs are much faster.
-
-Output appears at: `Datasets\yolo_experiments\SINGLE_GlueGun_Medium_plane\`
-
-### Using the launcher script (easier)
-
-```bat
-:: Interactive â€” double-click or run with no arguments, answer the prompts:
-phd_pipeline\scripts\run_sdg.bat
-
-:: Or fully scripted: mode component light samples env width height
-phd_pipeline\scripts\run_sdg.bat single GlueGun Medium 100 plane 1280 800
-phd_pipeline\scripts\run_sdg.bat multi - Medium 100 plane 1280 800
-```
-
-### Light mode values
-
-| Flag value | Intensity range |
-|-----------|----------------|
-| `Low` | 500 â€“ 5 000 lux |
-| `Medium` | 5 000 â€“ 20 000 lux |
-| `High` | 20 000 â€“ 80 000 lux |
+First run compiles shaders — takes several minutes. Subsequent runs are fast.
 
 ---
 
-## Part B â€” OD / AL / CL / Inference Setup (Python)
+## Part B — OD / AL / CL / Inference Setup
 
-### Step 1 â€” Create Python environment
+### Option 1 — Docker (recommended)
 
-```bash
-# Windows
-python -m venv .venv
-.venv\Scripts\activate
+#### Prerequisites
 
-# Linux/Mac
-python3.10 -m venv .venv
-source .venv/bin/activate
+| OS | What to install |
+|---|---|
+| **Windows** | [Docker Desktop](https://www.docker.com/products/docker-desktop/) — enable WSL2 backend + GPU in Settings → Resources |
+| **Linux** | Docker Engine + [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html) |
+| **Mac** | Docker Desktop (CPU only — no GPU training) |
+
+#### Setup
+
+```bat
+:: 1. Build the image (once — ~5 GB download, ~10 min first time)
+scripts\build_docker.bat
+
+:: 2. Verify GPU is visible inside the container
+docker run --rm --gpus all smartsdg info
+::   SmartSDG image ready
+::   torch      : 2.3.0
+::   CUDA       : True (12.1)
+::   GPU        : NVIDIA GeForce RTX 2080 ...
+
+:: 3. Create pipeline_config.json (git-ignored, per-machine)
 ```
 
-### Step 2 â€” Install dependencies
+`pipeline_config.json` at the project root:
+
+```json
+{
+  "docker_enabled": true,
+  "val_real": "C:/path/to/your/val_real"
+}
+```
+
+#### Start the dashboard
+
+```bat
+:: Option A — via compose (opens browser automatically)
+docker compose -f docker/docker-compose.yml up dashboard
+
+:: Option B — direct (same thing)
+docker run --gpus all --shm-size=2g -p 8765:8765 \
+  -v "%CD%:/workspace" smartsdg dashboard
+```
+
+Open **http://localhost:8765** — all stages (train / AL / CL) can be triggered
+from the UI with Docker enabled.
+
+---
+
+### Option 2 — Conda environment (no Docker)
 
 ```bash
-# Core (OD training, Active Learning, Continual Learning)
-pip install torch==2.3.0 torchvision==0.18.0 --index-url https://download.pytorch.org/whl/cu121
-pip install ultralytics==8.2.2
-pip install numpy==1.26.4 pandas==2.2.2 PyYAML==6.0.1 opencv-python
-pip install aas-core3.0rc02
+# 1. Create env
+conda create -n yolov12 python=3.10
+conda activate yolov12
 
-# Verify
+# 2. Install PyTorch (CUDA 12.1 build)
+pip install torch==2.3.0 torchvision==0.18.0 \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# 3. Install remaining deps
+pip install -r requirements.txt
+
+# 4. Verify
+python -c "import torch; print('CUDA:', torch.cuda.is_available())"
+python -c "from aas_core3 import jsonization; print('AAS ok')"
 python -c "import ultralytics; print(ultralytics.__version__)"
-python -c "import torch; print(torch.cuda.is_available())"
 ```
 
-### Step 3 â€” Configure paths
+> **Package names that differ from PyPI defaults:**
+> - Use `aas-core3.0` (not `aas-core3.0rc02`) — wrong name installs under `aas_core3_rc02`
+> - Use `ultralytics==8.3.157` to match the Docker image
 
-Edit `phd_pipeline/configs/paths.env` with your local paths:
+Configure machine paths:
 
-```env
-SDG_ROOT=C:\Users\hota02\Documents\SDG_v2
-CLUSTER_ROOT=C:\Users\hota02\Documents\sd_light_od\cluster_experiments
-DATASET_ROOT=C:\Users\hota02\Documents\SDG_v2\SmartSDG\Datasets
+```bat
+:: Check what got resolved
+python config_paths.py
 ```
 
-### Step 4 â€” Verify training works
-
-```bash
-cd SDG_v2/OD_training
-python main.py --mode train --aas_file "AAS/CA_Modul-OD_pipeline_v0.5.json"
 ```
+  isaac_python   = ...\omniverse\python.bat              [OK]
+  train_python   = ...\envs\yolov12\python.exe           [OK]
+  val_real       = ...\val_real                          [OK | MISSING]
+```
+
+If anything shows `MISSING`, create `pipeline_config.json`:
+
+```json
+{
+  "isaac_python": "C:/path/to/omniverse/python.bat",
+  "train_python": "C:/path/to/envs/yolov12/python.exe",
+  "val_real":     "C:/path/to/val_real"
+}
+```
+
+Then start the dashboard:
+
+```bat
+scripts\launch_dashboard.bat
+```
+
+---
+
+## Verify the full chain
+
+```bat
+scripts\run_tests.bat        :: static checks ~10 s
+scripts\run_tests.bat full   :: + real SDG + 1-epoch training ~2-5 min
+```
+
+All checks must pass before running experiments.
 
 ---
 
 ## Troubleshooting
 
 | Problem | Fix |
-|---------|-----|
-| `nvidia-smi` not found in container | Re-run `docker` command with `--runtime=nvidia --gpus all` |
-| `torch.cuda.is_available()` returns `False` | Check CUDA version matches PyTorch build |
-| Isaac Sim takes a long time on first run | Normal â€” it is compiling shaders. Subsequent runs use cache. |
-| `ModuleNotFoundError: ultralytics` | Activate your venv first, then `pip install ultralytics` |
-| `aas_core3` import error | `pip install aas-core3.0rc02` |
-| Out of GPU memory during training | Reduce `batch` size in AAS config or use `--device cpu` for testing |
-
+|---|---|
+| `CUDA: False` inside container | Enable GPU in Docker Desktop → Settings → Resources → WSL2; restart Docker |
+| `OSError: No space left on device` (shm) | Add `--shm-size=2g` to the docker run command (dashboard does this automatically) |
+| `Can't get attribute 'C3k2'` | Ultralytics version mismatch — rebuild image (`scripts\build_docker.bat`) |
+| `ModuleNotFoundError: aas_core3` | Wrong package: use `aas-core3.0`, not `aas-core3.0rc02` |
+| Out of GPU memory | Reduce `batch_size` to 4–8 in the dashboard training form (8 GB VRAM → max 8) |
+| Isaac Sim slow first run | Normal — compiling shaders. Use cache on subsequent runs. |
+| `docker: image not found` | Build the image first: `scripts\build_docker.bat` |
+| Dashboard not opening | Check port 8765 is free: `Get-NetTCPConnection -LocalPort 8765` |

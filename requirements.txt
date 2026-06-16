@@ -7,7 +7,7 @@
 #   pip install -r requirements.txt
 
 # Object detection (YOLOv8 / YOLOv12)
-ultralytics==8.2.2
+ultralytics==8.3.157
 
 # Numerics / data
 numpy==1.26.4
@@ -17,7 +17,7 @@ Pillow>=10.0
 PyYAML==6.0.1
 
 # Asset Administration Shell (IEC 63278) configs
-aas-core3.0rc02
+aas-core3.0
 
 # Active learning clustering (PPAL)
 scikit-learn>=1.4

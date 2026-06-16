@@ -60,55 +60,124 @@ NVIDIA GPU. A `Dockerfile` for that is provided (see below). The split is:
 
 ---
 
-## Docker for the Python stages (optional)
+## Docker for the Python stages (recommended for new machines)
 
-`docker/Dockerfile` builds an image with torch (CUDA), ultralytics and
-aas_core3. Datasets, weights and configs are mounted as volumes, so the
-container is stateless.
+`docker/Dockerfile` builds a self-contained image covering **OD Training,
+Active Learning, Continual Learning, Inference and the Dashboard**. Datasets,
+weights and configs are bind-mounted at runtime — the image itself stays small
+and stateless. Isaac Sim is the only stage that stays native.
 
-```bash
-# build
-docker build -t smartsdg-train -f docker/Dockerfile .
+### What you need on the host
 
-# train (Linux host with nvidia-container-toolkit)
-docker run --gpus all -v "$PWD:/workspace" -w /workspace/OD_training \
-    smartsdg-train python main.py --mode train \
-    --aas_file ../AAS/datasets/<date>/<config>.json
+| Requirement | Windows | Linux |
+|---|---|---|
+| Docker Desktop | ✅ | Docker Engine |
+| GPU passthrough | Docker Desktop → Settings → Resources → WSL2 GPU | NVIDIA Container Toolkit |
+| NVIDIA driver | 525+ | 525+ |
+
+### One-time build
+
+```bat
+:: Windows
+scripts\build_docker.bat
+
+:: Linux / Mac
+docker build -t smartsdg -f docker/Dockerfile .
 ```
 
-This does **not** include Isaac Sim — generate datasets natively first, then
-train/AL/infer in the container (or just keep using the conda env; the container
-is only for moving to a clean GPU box).
+First build downloads ~5 GB (PyTorch CUDA base). Subsequent builds use the
+layer cache and take ~30 s.
 
-### Running it from the dashboard (opt-in)
+### Start the dashboard
 
-The dashboard can run the heavy GPU stages (**training, Active Learning,
-Continual Learning**) in the container for you — SDG, harvest and live inference
-always stay native. In **Docs → ⚙ Execution**:
+```bash
+docker compose -f docker/docker-compose.yml up dashboard
+```
 
-1. **Build image** (once) — builds `smartsdg-train` (button runs `docker build`
-   as a job; needs Docker Desktop running).
-2. Tick **"run training/AL/CL in Docker"** — from then on those runs are wrapped
-   in `docker run --gpus all`, mounting the project at `/workspace` and the val
-   images at `/valdata`, with path arguments translated automatically.
+Then open **http://localhost:8765**. All pipeline stages can be triggered from
+the dashboard UI with Docker enabled.
 
-The toggle is stored per-machine in `pipeline_config.json` (`docker_enabled`).
-Status dots show whether Docker is installed, the daemon is running, and the
-image is built.
+### Enable Docker mode in the dashboard
 
-> **Path caveat:** only the project root and the val-images folder are mounted,
-> so any path passed to a run must live under one of those (datasets, models,
-> AAS and staged AL/CL data all do). Arbitrary external folders are not visible
-> inside the container.
+In the dashboard **⚙ Execution** section:
+
+1. Tick **"run training/AL/CL in Docker"** — the toggle is saved to
+   `pipeline_config.json` (`docker_enabled: true`).
+2. Training, AL, and CL runs are then automatically wrapped in
+   `docker run --gpus all --shm-size=2g`, with project files mounted at
+   `/workspace` and val-real images at `/valdata`. Path translation from
+   Windows host paths to container paths is handled automatically.
+
+Or set it manually:
+
+```json
+// pipeline_config.json  (git-ignored, per-machine)
+{
+  "docker_enabled": true,
+  "val_real": "C:/path/to/your/val_real"
+}
+```
+
+### One-off stage commands (without dashboard)
+
+```bash
+# OD Training
+docker run --gpus all --shm-size=2g \
+  -v "$PWD:/workspace" \
+  -e SMARTSDG_WIN_ROOT="$PWD" \
+  smartsdg train --aas_file AAS/datasets/<date>/<config>.json
+
+# Active Learning
+docker run --gpus all --shm-size=2g -v "$PWD:/workspace" smartsdg al
+
+# Continual Learning
+docker run --gpus all --shm-size=2g -v "$PWD:/workspace" smartsdg cl
+
+# Debug shell inside the container
+docker compose -f docker/docker-compose.yml run --rm shell
+```
+
+### Entrypoint modes
+
+| Command | What runs |
+|---|---|
+| `smartsdg info` | Print torch/CUDA/GPU versions (default) |
+| `smartsdg dashboard` | Start the dashboard on :8765 |
+| `smartsdg train [args]` | `OD_training/main.py --mode train [args]` |
+| `smartsdg al [args]` | `AL/main_al.py [args]` |
+| `smartsdg cl [args]` | `CL/main_cl.py [args]` |
+| `smartsdg inference [args]` | `inference/run_inference.py [args]` |
+| `smartsdg shell` | Interactive bash |
+| `smartsdg python script.py` | Run any python script |
+
+### Known limitations
+
+- **Live webcam inference** does not work in Docker on Windows — USB passthrough
+  is unreliable. Use native inference for the live camera tab.
+- **Batch size**: YOLOv12l on 8 GB VRAM needs `batch_size ≤ 8`. The template
+  AAS defaults to 8; adjust in the dashboard form for larger GPUs.
+- **Shared memory**: `--shm-size=2g` is required for PyTorch's multi-worker
+  dataloader. The dashboard injects this automatically.
 
 ---
 
 ## Recommended setup on a fresh machine
 
-1. Install **Isaac Sim 4.5** (native) — only needed for SDG.
-2. Create the Python env: `pip install -r requirements.txt` (or build the Docker
-   image).
-3. `python config_paths.py` — confirm all three paths resolve `[OK]`; if any are
-   `MISSING`, set the env var or edit `pipeline_config.json`.
-4. `scripts\run_tests.bat` — the self-test confirms the whole chain.
-5. `scripts\launch_dashboard.bat`.
+### With Docker (recommended — no Python install needed)
+
+1. Install **Isaac Sim 4.5** natively (SDG stage only).
+2. Install **Docker Desktop** + enable GPU (WSL2 on Windows, nvidia-container-toolkit on Linux).
+3. `git clone <repo> && cd SDG_v2`
+4. `scripts\build_docker.bat` (Windows) or `docker build -t smartsdg -f docker/Dockerfile .`
+5. Create `pipeline_config.json` with `docker_enabled: true` and your `val_real` path.
+6. `docker compose -f docker/docker-compose.yml up dashboard` → open http://localhost:8765
+
+### Without Docker (conda env)
+
+1. Install **Isaac Sim 4.5** natively.
+2. `conda create -n yolov12 python=3.10 && conda activate yolov12`
+3. `pip install torch==2.3.0 torchvision==0.18.0 --index-url https://download.pytorch.org/whl/cu121`
+4. `pip install -r requirements.txt`
+5. `python config_paths.py` — confirm all three paths resolve `[OK]`.
+6. `scripts\run_tests.bat` — self-test confirms the whole chain.
+7. `scripts\launch_dashboard.bat`.

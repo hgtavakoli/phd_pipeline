@@ -1,0 +1,107 @@
+name: smartsdg
+
+# Common volume + working-dir shared by all services
+x-base: &base
+  image: smartsdg
+  build:
+    context: ..
+    dockerfile: docker/Dockerfile
+  working_dir: /workspace
+  volumes:
+    # Bind-mount the whole project so data + code changes are live
+    - ..:/workspace
+    # Persist downloaded YOLO weights outside the container
+    - smartsdg-weights:/workspace/.ultralytics
+  environment:
+    - PYTHONUNBUFFERED=1
+  shm_size: 2g
+  # Remove container after it exits (override with --no-rm for debugging)
+  # tty: true  # uncomment to keep container alive for `docker compose exec`
+
+services:
+
+  # ── Dashboard ────────────────────────────────────────────────────────────────
+  # docker compose up dashboard
+  # Then open http://localhost:8765 in your browser.
+  dashboard:
+    <<: *base
+    container_name: smartsdg-dashboard
+    command: ["dashboard"]
+    ports:
+      - "8765:8765"
+    # GPU optional for dashboard (needed only if live inference is triggered)
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ── OD Training ──────────────────────────────────────────────────────────────
+  # docker compose run --rm train --aas_file AAS/datasets/2026-06-15/foo.json
+  train:
+    <<: *base
+    container_name: smartsdg-train-run
+    command: ["train"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ── Active Learning ───────────────────────────────────────────────────────────
+  # docker compose run --rm al --strategy ppal_feat
+  al:
+    <<: *base
+    container_name: smartsdg-al
+    command: ["al"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ── Continual Learning ────────────────────────────────────────────────────────
+  # docker compose run --rm cl
+  cl:
+    <<: *base
+    container_name: smartsdg-cl
+    command: ["cl"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ── Inference (batch, no webcam) ──────────────────────────────────────────────
+  # docker compose run --rm inference --source path/to/images
+  inference:
+    <<: *base
+    container_name: smartsdg-inference
+    command: ["inference"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ── Debug shell ───────────────────────────────────────────────────────────────
+  # docker compose run --rm shell
+  shell:
+    <<: *base
+    container_name: smartsdg-shell
+    command: ["shell"]
+    stdin_open: true
+    tty: true
+
+volumes:
+  smartsdg-weights:

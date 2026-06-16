@@ -2,3 +2,4 @@
 # (source + data are bind-mounted at run time, not copied into the image).
 *
 !requirements.txt
+!docker/entrypoint.sh
