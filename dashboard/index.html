@@ -413,6 +413,18 @@
 <!-- ============ DOCS ============ -->
 <div class="tab" id="tab-docs">
   <div class="card">
+    <h2>⚙ Execution — run heavy stages in Docker <span data-info="docker"></span></h2>
+    <p class="muted">Training, Active Learning and Continual Learning can run inside a GPU Docker container instead of the local conda env (SDG/Isaac, harvest and live always run natively). Opt-in, per machine.</p>
+    <div class="row">
+      <div id="dockerStatus" class="muted">checking Docker…</div>
+    </div>
+    <div class="row">
+      <label class="chips" style="display:inline-flex"><input id="dockerToggle" type="checkbox" onchange="toggleDocker()"> run training/AL/CL in Docker</label>
+      <button class="secondary" id="btnBuildDocker" onclick="buildDocker()">🔨 Build image</button>
+      <span class="muted">Image: <code>smartsdg-train</code> · needs Docker Desktop running + NVIDIA Container Toolkit (Windows: WSL2 GPU).</span>
+    </div>
+  </div>
+  <div class="card">
     <h2>Project documentation</h2>
     <div class="doclist">
       <button class="primary" onclick="loadDoc('GUIDE.md')">📖 Full User Guide</button>
@@ -499,6 +511,27 @@ function showTab(name){
   if(name!=='live') lvStop();
   if(name==='cl'){ clInit(); }
   if(name==='pipelog') loadPipelog();
+  if(name==='docs') loadDockerStatus();
+}
+
+// ---------- docker execution ----------
+async function loadDockerStatus(){
+  const s=await fetch('/api/docker_status').then(r=>r.json()).catch(()=>null);
+  if(!s){ $('dockerStatus').textContent='could not query Docker'; return; }
+  const dot=(ok)=>ok?'<span style="color:var(--accent)">●</span>':'<span style="color:var(--red)">●</span>';
+  $('dockerStatus').innerHTML = `${dot(s.installed)} installed &nbsp; ${dot(s.daemon)} daemon running &nbsp; ${dot(s.image)} image '${s.image_name}' built`;
+  $('dockerToggle').checked = !!s.enabled;
+  $('btnBuildDocker').disabled = !s.daemon;
+}
+async function toggleDocker(){
+  const r=await post('/api/docker_toggle',{enabled:$('dockerToggle').checked});
+  if(!r.ok){alert('toggle failed');return;}
+}
+async function buildDocker(){
+  if(!confirm('Build the smartsdg-train image? First build downloads ~5 GB (PyTorch CUDA) and takes several minutes.')) return;
+  const r=await post('/api/build_docker',{});
+  if(!r.ok){alert(r.error);return;}
+  startConsole('Docker image build');
 }
 
 // ---------- pipeline log (factory-wide AAS event history) ----------
@@ -1032,6 +1065,7 @@ async function pollStatus(){
     $('btnTestQuick').disabled = s.running; $('btnTestFull').disabled = s.running;
     $('btnRunAl').disabled = s.running;
     if($('btnRunCl')) $('btnRunCl').disabled = s.running;
+    if($('btnBuildDocker')) $('btnBuildDocker').disabled = s.running;
     if(s.running){ b.textContent = `⏳ ${s.name} — ${Math.floor(s.elapsed/60)}m ${s.elapsed%60}s`; b.className='run'; if(!polling) polling=setInterval(pollLogs,1000);}
     else if(s.name){ b.textContent = s.returncode===0 ? `✔ ${s.name} finished` : `✖ ${s.name} exited (${s.returncode})`; b.className = s.returncode===0?'ok':'err'; }
     else { b.textContent='idle'; b.className=''; }
@@ -1299,6 +1333,8 @@ Object.assign(INFO, {
   cl_batch:{short:'Batch size (split into new + replay by the ratio).', long:'On 8 GB GPU use 8–16 at 640px.'},
   pipelog:{guide:'CONFIG.md', short:'Append-only record of every pipeline action, stored in the AAS PipelineHistory submodel.',
     long:'Generation, training, AL, CL, inference and harvest each append an event (timestamp, session, stage, status, metrics) to AAS/pipeline_history.json — a valid IEC 63278 AAS Environment. This is the factory-wide, trackable, modular record: another module can read it to know exactly what happened, when, and with what result.'},
+  docker:{guide:'PORTABILITY.md', short:'Run the heavy GPU Python stages (training/AL/CL) in a Docker container instead of the local conda env.',
+    long:'When enabled, the dashboard wraps training/AL/CL commands in `docker run --gpus all`, mounting the project at /workspace and the val images at /valdata. SDG (Isaac Sim), harvest and live inference always run natively. Needs Docker Desktop running and NVIDIA Container Toolkit (on Windows, WSL2 GPU). Build the image once with the button. Note: paths must resolve inside the container (project + val data are mounted; arbitrary external paths are not).'},
   session:{short:'Name the current session/task so all following events are tagged with it.',
     long:'Use this when a factory event starts a new piece of work (e.g. a new line retrofit, adding an object). "New session" starts a fresh session id; events recorded afterwards carry the name/task, so you can filter the history per session.'},
   cl_overview2:{guide:'CONTINUAL_LEARNING.md', short:'Final accuracy and cost of each CL run, for comparison with full retraining.',

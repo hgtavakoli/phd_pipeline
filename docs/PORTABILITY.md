@@ -80,6 +80,27 @@ This does **not** include Isaac Sim — generate datasets natively first, then
 train/AL/infer in the container (or just keep using the conda env; the container
 is only for moving to a clean GPU box).
 
+### Running it from the dashboard (opt-in)
+
+The dashboard can run the heavy GPU stages (**training, Active Learning,
+Continual Learning**) in the container for you — SDG, harvest and live inference
+always stay native. In **Docs → ⚙ Execution**:
+
+1. **Build image** (once) — builds `smartsdg-train` (button runs `docker build`
+   as a job; needs Docker Desktop running).
+2. Tick **"run training/AL/CL in Docker"** — from then on those runs are wrapped
+   in `docker run --gpus all`, mounting the project at `/workspace` and the val
+   images at `/valdata`, with path arguments translated automatically.
+
+The toggle is stored per-machine in `pipeline_config.json` (`docker_enabled`).
+Status dots show whether Docker is installed, the daemon is running, and the
+image is built.
+
+> **Path caveat:** only the project root and the val-images folder are mounted,
+> so any path passed to a run must live under one of those (datasets, models,
+> AAS and staged AL/CL data all do). Arbitrary external folders are not visible
+> inside the container.
+
 ---
 
 ## Recommended setup on a fresh machine

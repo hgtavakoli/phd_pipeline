@@ -1,0 +1,4 @@
+# Keep the build context tiny — only requirements.txt is needed at build time
+# (source + data are bind-mounted at run time, not copied into the image).
+*
+!requirements.txt

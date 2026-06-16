@@ -63,6 +63,83 @@ def load_defaults():
         return {}
 
 
+# --- Docker execution (opt-in) for the heavy GPU Python stages -----------------
+# Training / AL / CL can run inside a container so the machine only needs Docker
+# (no conda env). SDG (Isaac Sim), harvest and live stay native. Toggle + image
+# name live in pipeline_config.json (per-machine, git-ignored).
+DOCKER_IMAGE = "smartsdg-train"
+MACHINE_CFG = ROOT / "pipeline_config.json"
+
+
+def _machine_cfg():
+    try:
+        return json.loads(MACHINE_CFG.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return {}
+
+
+def _set_machine_cfg(key, value):
+    cfg = _machine_cfg()
+    cfg[key] = value
+    MACHINE_CFG.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+
+
+def docker_enabled():
+    return bool(_machine_cfg().get("docker_enabled"))
+
+
+def docker_status():
+    """{installed, daemon, image} — whether Docker is usable + the image built."""
+    exe = shutil.which("docker")
+    st = {"installed": bool(exe), "daemon": False, "image": False,
+          "enabled": docker_enabled(), "image_name": DOCKER_IMAGE}
+    if not exe:
+        return st
+    try:
+        r = subprocess.run([exe, "info", "--format", "{{.ServerVersion}}"],
+                           capture_output=True, text=True, timeout=10)
+        st["daemon"] = (r.returncode == 0)
+    except Exception:
+        pass
+    if st["daemon"]:
+        try:
+            r = subprocess.run([exe, "images", "-q", DOCKER_IMAGE],
+                               capture_output=True, text=True, timeout=10)
+            st["image"] = bool(r.stdout.strip())
+        except Exception:
+            pass
+    return st
+
+
+def _to_container_path(arg):
+    """Translate a host absolute path under the project (or VAL_REAL) to its
+    bind-mounted container path; leave other args unchanged."""
+    rs = str(ROOT)
+    if isinstance(arg, str) and arg.startswith(rs):
+        return "/workspace" + arg[len(rs):].replace("\\", "/")
+    vr = str(VAL_REAL)
+    if isinstance(arg, str) and VAL_REAL.exists() and arg.startswith(vr):
+        return "/valdata" + arg[len(vr):].replace("\\", "/")
+    return arg
+
+
+def dockerize(cmd, cwd):
+    """Wrap a native python command into a `docker run` invocation: mount the
+    project at /workspace (and VAL_REAL at /valdata), set the workdir, translate
+    path args, and use the container's python. Returns (docker_cmd, cwd=ROOT)."""
+    inner = []
+    for a in cmd:
+        if a in (str(TRAIN_PYTHON), "python", "cmd", "/c"):
+            continue  # interpreter / shell wrapper handled by the image
+        inner.append(_to_container_path(a))
+    workdir = "/workspace/" + str(Path(cwd).resolve().relative_to(ROOT)).replace("\\", "/")
+    run = ["docker", "run", "--rm", "--gpus", "all", "-v", f"{ROOT}:/workspace"]
+    if VAL_REAL.exists():
+        run += ["-v", f"{VAL_REAL}:/valdata"]
+    run += ["-w", workdir, DOCKER_IMAGE, "python"] + inner
+    return run, ROOT
+
+
 def _iter_images(folder):
     """All images (png/jpg) under a folder, recursively."""
     for p in folder.rglob("*"):
@@ -1345,6 +1422,9 @@ class Handler(BaseHTTPRequestHandler):
             # Master cross-stage defaults (pipeline.yaml) for the dashboard forms.
             return self._json(load_defaults())
 
+        if route == "/api/docker_status":
+            return self._json(docker_status())
+
         if route == "/api/pipeline_log":
             # Factory-wide event log (AAS PipelineHistory) — newest first.
             events = read_pipeline_events()
@@ -1510,7 +1590,10 @@ class Handler(BaseHTTPRequestHandler):
                 cmd = build_train_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job("OD training", cmd, OD_DIR, meta={**payload, "stage": "training"})
+            cwd = OD_DIR
+            if docker_enabled():
+                cmd, cwd = dockerize(cmd, OD_DIR)
+            ok, err = start_job("OD training", cmd, cwd, meta={**payload, "stage": "training"})
             return self._json({"ok": ok, "error": err})
 
         if route == "/api/run_harvest":
@@ -1580,9 +1663,26 @@ class Handler(BaseHTTPRequestHandler):
                 cmd, n_pool, n_val = build_al_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, AL_DIR,
+            cwd = AL_DIR
+            if docker_enabled():
+                cmd, cwd = dockerize(cmd, AL_DIR)
+            ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, cwd,
                                 meta={**payload, "stage": "AL"})
             return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
+
+        if route == "/api/docker_toggle":
+            _set_machine_cfg("docker_enabled", bool(payload.get("enabled")))
+            return self._json({"ok": True, "enabled": docker_enabled()})
+
+        if route == "/api/build_docker":
+            st = docker_status()
+            if not st["installed"]:
+                return self._json({"ok": False, "error": "Docker is not installed / not on PATH"}, 400)
+            if not st["daemon"]:
+                return self._json({"ok": False, "error": "Docker daemon not running — start Docker Desktop first"}, 400)
+            cmd = ["docker", "build", "-t", DOCKER_IMAGE, "-f", str(ROOT / "docker" / "Dockerfile"), str(ROOT)]
+            ok, err = start_job("Docker image build", cmd, ROOT)
+            return self._json({"ok": ok, "error": err})
 
         if route == "/api/session":
             # Start / name a session or task — tags all subsequent log events.
@@ -1611,7 +1711,10 @@ class Handler(BaseHTTPRequestHandler):
                 cmd, meta = build_cl_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
-            ok, err = start_job(f"Continual Learning (+{','.join(meta['new_classes'])})", cmd, CL_DIR,
+            cwd = CL_DIR
+            if docker_enabled():
+                cmd, cwd = dockerize(cmd, CL_DIR)
+            ok, err = start_job(f"Continual Learning (+{','.join(meta['new_classes'])})", cmd, cwd,
                                 meta={**payload, "stage": "CL", **meta})
             return self._json({"ok": ok, "error": err, **meta})
 
