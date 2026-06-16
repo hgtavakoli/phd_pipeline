@@ -378,8 +378,27 @@ def main():
     ap = argparse.ArgumentParser(description="SmartSDG pipeline self-test")
     ap.add_argument("--full", action="store_true",
                     help="also run real SDG generation + training (needs Isaac Sim + GPU, ~5-10 min)")
+    ap.add_argument("--ci", action="store_true",
+                    help="machine-independent subset only (no Isaac/GPU/torch/assets) — "
+                         "for GitHub Actions on a clean runner")
     ap.add_argument("--keep", action="store_true", help="keep test artifacts (dataset, weights)")
     args = ap.parse_args()
+
+    if args.ci:
+        # Portable subset: guards the hard invariants without needing Isaac Sim,
+        # a GPU, torch/ultralytics, or the git-ignored USD assets. Runs on a clean
+        # runner with only PyYAML + numpy + Pillow + aas-core3.0 installed.
+        print("=" * 64)
+        print("CI — machine-independent checks")
+        print("=" * 64)
+        check("no BOM in configs", t_no_bom)
+        check("config.yaml structure", t_config_parses)
+        check("AAS template vs class-ID registry", t_aas_template)
+        check("python modules compile", t_compile)
+        check("converter quality filters (synthetic)", t_converter_filters)
+        check("AAS files valid (IEC 63278)", t_aas_valid)
+        _print_summary()
+        return
 
     print("=" * 64)
     print("TIER 1 — static checks")
@@ -415,6 +434,10 @@ def main():
         if not args.keep:
             cleanup_test_artifacts()
 
+    _print_summary()
+
+
+def _print_summary():
     print("=" * 64)
     passed = sum(1 for ok, *_ in RESULTS if ok)
     failed = len(RESULTS) - passed

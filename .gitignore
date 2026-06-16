@@ -20,6 +20,9 @@ env/
 .DS_Store
 Thumbs.db
 
+# ----- Ultralytics runtime cache (machine-local: fonts, settings, cache) -----
+.ultralytics/
+
 # ----- Model weights (large, reproducible from training) -----
 *.pt
 *.onnx

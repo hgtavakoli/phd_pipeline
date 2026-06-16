@@ -1,0 +1,44 @@
+name: CI
+
+# Machine-independent self-test for the SmartSDG pipeline.
+#
+# This runs the portable subset of scripts/test_pipeline.py (the `--ci` tier):
+# it guards the hard invariants — BOM-free configs, config.yaml structure,
+# AAS template <-> class-ID registry consistency, all modules compile, the
+# converter "never keep an unlabeled object" rule, and IEC 63278 AAS validity —
+# WITHOUT needing Isaac Sim, a GPU, torch/ultralytics, or the git-ignored USD
+# assets. The full SDG/train/AL tiers stay local (run_tests.bat full).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install lightweight dependencies
+        # Only what the --ci checks need. Pinned to match requirements.txt where
+        # behaviour matters (numpy/PyYAML); torch + ultralytics are intentionally
+        # NOT installed — the CI tier never imports them.
+        run: |
+          python -m pip install --upgrade pip
+          pip install PyYAML==6.0.1 numpy==1.26.4 "Pillow>=10.0" aas-core3.0
+
+      - name: Run pipeline self-test (CI tier)
+        env:
+          # Subprocess checks shell out to this interpreter; on a clean runner
+          # there is no conda env, so point them at the runner's Python.
+          SMARTSDG_TRAIN_PYTHON: python
+        run: python -X utf8 scripts/test_pipeline.py --ci
