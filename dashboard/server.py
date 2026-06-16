@@ -67,7 +67,7 @@ def load_defaults():
 # Training / AL / CL can run inside a container so the machine only needs Docker
 # (no conda env). SDG (Isaac Sim), harvest and live stay native. Toggle + image
 # name live in pipeline_config.json (per-machine, git-ignored).
-DOCKER_IMAGE = "smartsdg-train"
+DOCKER_IMAGE = "smartsdg"
 MACHINE_CFG = ROOT / "pipeline_config.json"
 
 
@@ -133,9 +133,13 @@ def dockerize(cmd, cwd):
             continue  # interpreter / shell wrapper handled by the image
         inner.append(_to_container_path(a))
     workdir = "/workspace/" + str(Path(cwd).resolve().relative_to(ROOT)).replace("\\", "/")
-    run = ["docker", "run", "--rm", "--gpus", "all", "-v", f"{ROOT}:/workspace"]
+    run = ["docker", "run", "--rm", "--gpus", "all",
+           "--shm-size=2g",
+           "-e", f"SMARTSDG_WIN_ROOT={ROOT}",
+           "-v", f"{ROOT}:/workspace"]
     if VAL_REAL.exists():
-        run += ["-v", f"{VAL_REAL}:/valdata"]
+        run += ["-v", f"{VAL_REAL}:/valdata",
+                "-e", f"SMARTSDG_WIN_VAL_REAL={VAL_REAL}"]
     run += ["-w", workdir, DOCKER_IMAGE, "python"] + inner
     return run, ROOT
 
@@ -1324,6 +1328,71 @@ class Handler(BaseHTTPRequestHandler):
             # Pretrained/base weights available in OD_training (for the dropdown)
             pts = sorted(f.name for f in OD_DIR.glob("*.pt"))
             return self._json(pts)
+
+        if route == "/api/inference_images":
+            # Run YOLO on a folder of images; return per-image box predictions +
+            # a base64 JPEG thumbnail so this works for any folder, including
+            # paths outside the project root (avoids /img security boundary).
+            folder_arg = q.get("folder", [""])[0]
+            model_arg = q.get("model", [""])[0]
+            conf = float(q.get("conf", ["0.25"])[0])
+            limit = min(int(q.get("limit", ["30"])[0]), 200)
+            try:
+                import base64
+                import cv2
+                from ultralytics import YOLO
+                folder = Path(folder_arg)
+                if not folder.is_dir():
+                    return self._json({"error": f"folder not found: {folder_arg}"}, 400)
+                if model_arg and Path(model_arg).is_absolute():
+                    mpath = Path(model_arg)
+                elif model_arg and (ROOT / model_arg).exists():
+                    mpath = ROOT / model_arg      # e.g. OD_training/results/.../best.pt
+                elif model_arg:
+                    mpath = OD_DIR / Path(model_arg).name  # e.g. yolov12l.pt
+                    if not mpath.exists():
+                        cands = list(OD_DIR.rglob(Path(model_arg).name))
+                        mpath = cands[0] if cands else mpath
+                else:
+                    mpath = Path("")
+                if not Path(mpath).exists():
+                    return self._json({"error": f"model not found: {model_arg}"}, 400)
+                imgs = sorted(_iter_images(folder))[:limit]
+                if not imgs:
+                    return self._json([])
+                model = YOLO(str(mpath))
+                out = []
+                for img_path in imgs:
+                    try:
+                        res = model.predict(str(img_path), conf=conf, verbose=False)[0]
+                        boxes = []
+                        if res.boxes is not None:
+                            for box in res.boxes:
+                                cls = int(box.cls[0])
+                                xywhn = box.xywhn[0].tolist()  # [cx,cy,w,h] normalised
+                                boxes.append([cls] + xywhn)
+                        # thumbnail: resize to 220 px wide, encode as base64 JPEG
+                        frame = cv2.imread(str(img_path))
+                        data_uri = ""
+                        if frame is not None:
+                            h, w = frame.shape[:2]
+                            tw = 220; th = max(1, int(h * tw / w))
+                            thumb = cv2.resize(frame, (tw, th))
+                            ok2, jpg = cv2.imencode(".jpg", thumb,
+                                                    [cv2.IMWRITE_JPEG_QUALITY, 80])
+                            if ok2:
+                                data_uri = ("data:image/jpeg;base64,"
+                                            + base64.b64encode(jpg).decode())
+                        out.append({"name": img_path.name,
+                                    "dataUri": data_uri,
+                                    "boxes": boxes})
+                    except Exception:
+                        continue
+                return self._json(out)
+            except ImportError as ie:
+                return self._json({"error": f"missing dependency: {ie}"}, 500)
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
 
         if route == "/api/harvests":
             # List harvest folders (inference-time AL candidates) with counts.

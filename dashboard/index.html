@@ -66,7 +66,7 @@
 <!-- ============ FOLDER PICKER MODAL ============ -->
 <div id="folderModal" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,.8);z-index:120;align-items:center;justify-content:center">
   <div style="background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;width:640px;max-width:92vw;max-height:85vh;display:flex;flex-direction:column">
-    <strong style="color:var(--text);margin-bottom:8px">Pick the real-images folder</strong>
+    <strong style="color:var(--text);margin-bottom:8px">Pick a folder</strong>
     <div id="fpPath" class="muted" style="font-family:Consolas,monospace;word-break:break-all;margin-bottom:6px"></div>
     <div id="fpList" style="flex:1;overflow:auto;border:1px solid var(--border);border-radius:6px;padding:6px;min-height:200px"></div>
     <div id="fpImgs" class="muted" style="margin-top:6px"></div>
@@ -103,8 +103,7 @@
 <nav>
   <button data-tab="sdg" class="active" onclick="showTab('sdg')">① SDG</button>
   <button data-tab="train" onclick="showTab('train')">② Training</button>
-  <button data-tab="harvest" onclick="showTab('harvest')">③ Inference</button>
-  <button data-tab="live" onclick="showTab('live')">🎥 Live</button>
+  <button data-tab="inference" onclick="showTab('inference')">③ Inference</button>
   <button data-tab="al" onclick="showTab('al')">④ Active Learning</button>
   <button data-tab="cl" onclick="showTab('cl')">⑤ Continual Learning</button>
   <span style="width:1px;background:var(--border);margin:6px 8px"></span>
@@ -257,36 +256,92 @@
   </div>
 </div>
 
-<!-- ============ 🎥 LIVE INFERENCE ============ -->
-<div class="tab" id="tab-live">
-  <div class="card">
-    <h2>🎥 Live Inference — webcam or video <span data-info="live_overview"></span></h2>
-    <p class="muted">Run a trained detector in real time on a camera feed or a video file, with boxes drawn live in the dashboard. Use it to demo or sanity-check a model on real input.</p>
+<!-- ============ ③ INFERENCE ============ -->
+<div class="tab" id="tab-inference">
+  <!-- Mode picker -->
+  <div class="card" style="padding:12px 16px">
+    <div class="row" style="align-items:center;gap:20px;margin:0">
+      <span style="font-size:.9rem;font-weight:600;color:var(--text2)">③ Inference — view mode:</span>
+      <label class="chips" style="display:inline-flex;gap:7px"><input type="radio" name="infMode" value="images" checked onchange="infToggleMode()"> 🖼 Images with BBoxes / labels</label>
+      <label class="chips" style="display:inline-flex;gap:7px"><input type="radio" name="infMode" value="live" onchange="infToggleMode()"> 🎥 Live Camera</label>
+    </div>
+  </div>
+
+  <!-- Images mode panel -->
+  <div id="infImagesPanel" class="card">
+    <h2>Run inference on a folder of images <span data-info="inf_overview"></span></h2>
+    <p class="muted">Pick a trained model and a folder of images. The detector runs on each image and displays predicted bounding boxes with class labels — useful for sanity-checking a model or reviewing how it performs on a new image set.</p>
+    <div class="row">
+      <div><label>Model (best.pt) <span data-info="inf_model"></span></label><select id="infModel" style="min-width:240px"></select></div>
+      <div><label>Images folder <span data-info="inf_source"></span></label>
+        <input id="infFolder" type="text" placeholder="C:\path\to\images" style="width:300px">
+        <button class="secondary" style="padding:5px 10px" onclick="openFolderPickerFor('infFolder')">📁 Browse…</button></div>
+      <div><label>Conf threshold</label><input id="infConf" type="number" step="0.05" value="0.25" style="width:80px"></div>
+      <div><label>Max images</label><input id="infLimit" type="number" value="30" min="1" max="200" style="width:80px"></div>
+      <button class="primary" id="btnRunInference" onclick="runInferenceImages()">▶ Run Inference</button>
+    </div>
+    <div id="infImagesGrid" class="thumbs" style="margin-top:12px"></div>
+  </div>
+
+  <!-- Live Camera mode panel -->
+  <div id="infLivePanel" class="card" style="display:none">
+    <h2>Live inference — webcam, IP camera, or video <span data-info="live_overview"></span></h2>
+    <p class="muted">Stream annotated detections in real time from a local webcam, a network IP camera (RTSP/HTTP), or a video file. The dashboard server opens the source and streams annotated frames to the browser.</p>
     <div class="row">
       <div><label>Model (best.pt) <span data-info="live_model"></span></label><select id="lvModel" style="min-width:240px"></select></div>
       <div><label>Source <span data-info="live_source"></span></label>
         <select id="lvSourceType" onchange="lvToggleSource()">
           <option value="webcam">Webcam</option>
+          <option value="ipcam">IP Camera (RTSP / HTTP)</option>
           <option value="video">Video file</option>
         </select></div>
-      <div id="lvWebcamBox"><label>Camera</label>
+      <div id="lvWebcamBox"><label>Camera index</label>
         <select id="lvCam"><option value="0">0 (default)</option></select>
         <button class="secondary" style="padding:5px 10px" onclick="lvProbeCams()">detect</button></div>
-      <div id="lvVideoBox" style="display:none"><label>Video file path</label><input id="lvVideo" type="text" placeholder="C:\path\to\video.mp4" style="width:280px">
+      <div id="lvIpBox" style="display:none"><label>Stream URL</label>
+        <input id="lvIpUrl" type="text" placeholder="rtsp://192.168.1.x:554/stream  or  http://..." style="width:360px"></div>
+      <div id="lvVideoBox" style="display:none"><label>Video file path</label>
+        <input id="lvVideo" type="text" placeholder="C:\path\to\video.mp4" style="width:280px">
         <button class="secondary" style="padding:5px 10px" onclick="openVideoPicker()">📁</button></div>
       <div><label>Conf <span data-info="live_conf"></span></label><input id="lvConf" type="number" step="0.05" value="0.25" style="width:80px"></div>
       <button class="primary" id="btnLive" onclick="lvStart()">▶ Start</button>
       <button class="danger" onclick="lvStop()">■ Stop</button>
     </div>
     <div id="lvView" style="margin-top:12px"></div>
-    <p class="muted">Tip: the camera is opened by the dashboard server (this machine). For best speed use a smaller model and lower resolution. Stop releases the camera.</p>
+    <p class="muted">Webcam: opened by the dashboard server (this machine). IP camera: paste the full RTSP or HTTP URL (e.g. <code>rtsp://admin:pass@192.168.1.10:554/stream</code>). Video: plays through once with boxes drawn. Stop releases the source.</p>
   </div>
 </div>
 
 <!-- ============ ACTIVE LEARNING ============ -->
 <div class="tab" id="tab-al">
+
+  <!-- Harvest AL candidates from real images -->
   <div class="card">
-    <h2>Active Learning experiment <span data-info="al_overview"></span></h2>
+    <h2>① Harvest real-image candidates <span data-info="inf_overview"></span></h2>
+    <p class="muted">Run a trained detector over a folder of <b>real, unlabelled</b> images. The most <b>uncertain</b> frames (where the model is least confident) are kept with predicted boxes as pre-labels — the best images to label next, feeding the AL experiment below.</p>
+    <div class="row">
+      <div><label>Model (best.pt) <span data-info="inf_model"></span></label><select id="hModel" style="min-width:200px"></select></div>
+      <div><label>Real images folder <span data-info="inf_source"></span></label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:300px">
+        <button class="secondary" style="padding:5px 10px" onclick="openFolderPicker()">📁 Browse…</button></div>
+      <div><label>Keep top-N uncertain <span data-info="inf_top"></span></label><input id="hTop" type="number" min="1" value="50" style="width:90px"></div>
+      <div><label>Conf threshold <span data-info="inf_conf"></span></label><input id="hConf" type="number" step="0.05" value="0.10" style="width:80px"></div>
+      <button class="primary" id="btnHarvest" onclick="runHarvest()">▶ Harvest</button>
+    </div>
+  </div>
+
+  <!-- Review candidates -->
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">② Review candidates</h2>
+      <div><label>Harvest run</label><select id="hSel" onchange="loadHarvestItems()" style="min-width:240px"></select></div>
+      <button class="secondary" onclick="loadHarvests()">⟳</button>
+      <span class="muted">Predicted boxes shown. <b>Accept</b> → moves image + verified labels into a <code>REAL_&lt;name&gt;</code> dataset (trainable/AL-able). <b>Reject</b> → discards it. Use ✏ Edit to correct boxes before accepting.</span>
+    </div>
+    <div id="harvestGrid" class="thumbs"></div>
+  </div>
+
+  <div class="card">
+    <h2>③ Active Learning experiment <span data-info="al_overview"></span></h2>
     <p class="muted">Train a model on a small labelled subset, then let it pick the most useful images to label next, round by round — reaching high accuracy with fewer labels. Pick a generated dataset as the pool and compare strategies on the same data.</p>
     <div class="row">
       <div><label>Dataset = unlabeled pool <span data-info="al_dataset"></span></label><select id="alDs" onchange="loadAlCameras()" style="min-width:280px"></select>
@@ -368,30 +423,6 @@
   </div>
 </div>
 
-<!-- ============ AL HARVEST ============ -->
-<div class="tab" id="tab-harvest">
-  <div class="card">
-    <h2>③ Inference → harvest AL candidates from real images <span data-info="inf_overview"></span></h2>
-    <p class="muted">Run a trained detector over a folder of <b>real, unlabelled</b> images. The most <b>uncertain</b> frames (where the model is least sure) are kept with the model's predictions as pre-labels — these are the most valuable real images to label next, feeding step ④ Active Learning.</p>
-    <div class="row">
-      <div><label>Model (best.pt) <span data-info="inf_model"></span></label><select id="hModel" style="min-width:200px"></select></div>
-      <div><label>Real images folder <span data-info="inf_source"></span></label><input id="hSource" type="text" placeholder="C:\path\to\real_images" style="width:300px">
-        <button class="secondary" style="padding:5px 10px" onclick="openFolderPicker()">📁 Browse…</button></div>
-      <div><label>Keep top-N uncertain <span data-info="inf_top"></span></label><input id="hTop" type="number" min="1" value="50" style="width:90px"></div>
-      <div><label>Conf threshold <span data-info="inf_conf"></span></label><input id="hConf" type="number" step="0.05" value="0.10" style="width:80px"></div>
-      <button class="primary" id="btnHarvest" onclick="runHarvest()">▶ Harvest</button>
-    </div>
-  </div>
-  <div class="card">
-    <div class="row" style="align-items:center">
-      <h2 style="margin:0">Review candidates</h2>
-      <div><label>Harvest</label><select id="hSel" onchange="loadHarvestItems()" style="min-width:240px"></select></div>
-      <button class="secondary" onclick="loadHarvests()">⟳</button>
-      <span class="muted">Predicted boxes shown. <b>Accept</b> → moves the image + verified labels into a <code>REAL_&lt;name&gt;</code> dataset (then trainable like any dataset). <b>Reject</b> → discards it. Refine boxes in any YOLO labeller — files are standard format.</span>
-    </div>
-    <div id="harvestGrid" class="thumbs"></div>
-  </div>
-</div>
 
 <!-- ============ PIPELINE LOG ============ -->
 <div class="tab" id="tab-pipelog">
@@ -421,7 +452,7 @@
     <div class="row">
       <label class="chips" style="display:inline-flex"><input id="dockerToggle" type="checkbox" onchange="toggleDocker()"> run training/AL/CL in Docker</label>
       <button class="secondary" id="btnBuildDocker" onclick="buildDocker()">🔨 Build image</button>
-      <span class="muted">Image: <code>smartsdg-train</code> · needs Docker Desktop running + NVIDIA Container Toolkit (Windows: WSL2 GPU).</span>
+      <span class="muted">Image: <code>smartsdg</code> · needs Docker Desktop running + NVIDIA Container Toolkit (Windows: WSL2 GPU).</span>
     </div>
   </div>
   <div class="card">
@@ -505,10 +536,9 @@ function showTab(name){
   document.querySelector(`nav button[data-tab=${name}]`).classList.add('active');
   if(name==='datasets') loadDatasets();
   if(name==='results') loadResults();
-  if(name==='al'){ loadAlDatasets(); loadAlResults(); }
-  if(name==='harvest'){ loadHarvestModels(); loadHarvests(); }
-  if(name==='live') loadLiveModels();
-  if(name!=='live') lvStop();
+  if(name==='al'){ loadAlDatasets(); loadAlResults(); loadHarvestModels(); loadHarvests(); }
+  if(name==='inference'){ infLoadModels(); if(infMode()==='live') loadLiveModels(); }
+  if(name!=='inference') lvStop();
   if(name==='cl'){ clInit(); }
   if(name==='pipelog') loadPipelog();
   if(name==='docs') loadDockerStatus();
@@ -528,7 +558,7 @@ async function toggleDocker(){
   if(!r.ok){alert('toggle failed');return;}
 }
 async function buildDocker(){
-  if(!confirm('Build the smartsdg-train image? First build downloads ~5 GB (PyTorch CUDA) and takes several minutes.')) return;
+  if(!confirm('Build the smartsdg image? First build downloads ~5 GB (PyTorch CUDA) and takes several minutes.')) return;
   const r=await post('/api/build_docker',{});
   if(!r.ok){alert(r.error);return;}
   startConsole('Docker image build');
@@ -647,6 +677,7 @@ function loadLiveModels(){
 function lvToggleSource(){
   const v=$('lvSourceType').value;
   $('lvWebcamBox').style.display = v==='webcam'?'':'none';
+  $('lvIpBox').style.display = v==='ipcam'?'':'none';
   $('lvVideoBox').style.display = v==='video'?'':'none';
 }
 function lvProbeCams(){
@@ -658,12 +689,75 @@ function lvProbeCams(){
 function lvStart(){
   const model=$('lvModel').value;
   if(!model){alert('Pick a model');return;}
-  const src = $('lvSourceType').value==='webcam' ? $('lvCam').value : $('lvVideo').value.trim();
-  if($('lvSourceType').value==='video' && !src){alert('Pick a video file');return;}
+  const stype=$('lvSourceType').value;
+  let src;
+  if(stype==='webcam') src=$('lvCam').value;
+  else if(stype==='ipcam'){ src=($('lvIpUrl').value||'').trim(); if(!src){alert('Enter a stream URL (e.g. rtsp://...)');return;} }
+  else { src=($('lvVideo').value||'').trim(); if(!src){alert('Pick a video file');return;} }
   const url='/stream?model='+encodeURIComponent(model)+'&source='+encodeURIComponent(src)+'&conf='+(+$('lvConf').value)+'&t='+Date.now();
-  $('lvView').innerHTML=`<img src="${url}" style="max-width:100%;border:1px solid var(--border);border-radius:8px" onerror="$('lvView').innerHTML='<p class=muted>Could not open the source (camera in use, or bad path).</p>'">`;
+  $('lvView').innerHTML=`<img src="${url}" style="max-width:100%;border:1px solid var(--border);border-radius:8px" onerror="$('lvView').innerHTML='<p class=muted>Could not open the source (camera in use, bad path, or stream URL unreachable).</p>'">`;
 }
 function lvStop(){ const v=$('lvView'); if(v){ v.innerHTML=''; } fetch('/api/stop_stream',{method:'POST'}).catch(()=>{}); }
+
+// ---------- inference tab: images / live mode picker ----------
+function infMode(){ return (document.querySelector('input[name=infMode]:checked')||{}).value||'images'; }
+function infToggleMode(){
+  const m=infMode();
+  $('infImagesPanel').style.display = m==='images'?'':'none';
+  $('infLivePanel').style.display = m==='live'?'':'none';
+  if(m==='live') loadLiveModels();
+  else infLoadModels();
+  if(m!=='live') lvStop();
+}
+function infLoadModels(){
+  fetch('/api/results').then(r=>r.json()).then(list=>{
+    const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
+    fetch('/api/weights').then(r=>r.json()).then(ws=>{
+      const all=[...runs,...ws];
+      if($('infModel')) $('infModel').innerHTML=all.map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— no models —</option>';
+    });
+  });
+}
+async function runInferenceImages(){
+  const model=($('infModel')||{}).value||'';
+  const folder=($('infFolder')||{}).value.trim()||'';
+  if(!model){alert('Pick a model');return;}
+  if(!folder){alert('Enter a folder path');return;}
+  $('infImagesGrid').innerHTML='<p class="muted">Running inference, please wait…</p>';
+  $('btnRunInference').disabled=true;
+  try{
+    const url='/api/inference_images?model='+encodeURIComponent(model)+'&folder='+encodeURIComponent(folder)+'&conf='+($('infConf').value||0.25)+'&limit='+($('infLimit').value||30);
+    const res=await fetch(url).then(r=>r.json());
+    if(res.error){$('infImagesGrid').innerHTML=`<p style="color:var(--red)">Error: ${res.error}</p>`;return;}
+    if(!res.length){$('infImagesGrid').innerHTML='<p class="muted">No images found, or no detections above the confidence threshold.</p>';return;}
+    $('infImagesGrid').innerHTML='';
+    for(const it of res){
+      const wrap=document.createElement('div');
+      wrap.style.cssText='display:inline-block;margin:4px;text-align:center';
+      const cv=await drawInferenceResult(it);
+      wrap.appendChild(cv);
+      wrap.insertAdjacentHTML('beforeend',`<div class="muted" style="font-size:.72rem">${it.name} &middot; ${it.boxes.length} box(es)</div>`);
+      $('infImagesGrid').appendChild(wrap);
+    }
+  }catch(e){$('infImagesGrid').innerHTML=`<p style="color:var(--red)">Error: ${e}</p>`;}
+  finally{$('btnRunInference').disabled=false;}
+}
+async function drawInferenceResult(it){
+  const img=await new Promise(res=>{const i=new Image();i.onload=()=>res(i);i.onerror=()=>res(null);i.src=it.dataUri||'';});
+  const cv=document.createElement('canvas');
+  if(!img||!it.dataUri){cv.width=220;cv.height=160;return cv;}
+  const scale=220/img.width; cv.width=img.width*scale; cv.height=img.height*scale;
+  cv.style.cssText='border-radius:6px;border:1px solid var(--border)'; cv.title=it.name;
+  const ctx=cv.getContext('2d'); ctx.drawImage(img,0,0,cv.width,cv.height);
+  ctx.lineWidth=1.5; ctx.font='10px Consolas';
+  for(const [c,cx,cy,w,h] of it.boxes){
+    const x=(cx-w/2)*cv.width, y=(cy-h/2)*cv.height;
+    ctx.strokeStyle=CLS_COLORS[c%CLS_COLORS.length]; ctx.fillStyle=CLS_COLORS[c%CLS_COLORS.length];
+    ctx.strokeRect(x,y,w*cv.width,h*cv.height);
+    ctx.fillText(COMPONENTS[c]||c,x+1,y>10?y-2:y+9);
+  }
+  return cv;
+}
 
 // ---------- AL harvest (inference-time, real images) ----------
 function loadHarvestModels(){
@@ -1066,6 +1160,8 @@ async function pollStatus(){
     $('btnRunAl').disabled = s.running;
     if($('btnRunCl')) $('btnRunCl').disabled = s.running;
     if($('btnBuildDocker')) $('btnBuildDocker').disabled = s.running;
+    if($('btnHarvest')) $('btnHarvest').disabled = s.running;
+    if($('btnRunInference')) $('btnRunInference').disabled = s.running;
     if(s.running){ b.textContent = `⏳ ${s.name} — ${Math.floor(s.elapsed/60)}m ${s.elapsed%60}s`; b.className='run'; if(!polling) polling=setInterval(pollLogs,1000);}
     else if(s.name){ b.textContent = s.returncode===0 ? `✔ ${s.name} finished` : `✖ ${s.name} exited (${s.returncode})`; b.className = s.returncode===0?'ok':'err'; }
     else { b.textContent='idle'; b.className=''; }
@@ -1205,7 +1301,8 @@ fetch('/api/defaults').then(r=>r.json()).then(d=>{
   setVal('clStrategy',c.strategy); setVal('clRatio',c.replay_ratio);
   setVal('clEpochs',c.epochs); setVal('clBatch',c.batch_size); setVal('clImgsz',c.img_size);
   // Inference
-  setVal('lvConf',inf.conf); setVal('hTop',inf.harvest_top); setVal('hConf',inf.harvest_conf);
+  setVal('lvConf',inf.conf); setVal('infConf',inf.conf);
+  setVal('hTop',inf.harvest_top); setVal('hConf',inf.harvest_conf);
   if(typeof updatePreview==='function') updatePreview();
 }).catch(()=>{});
 

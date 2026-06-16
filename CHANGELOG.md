@@ -4,6 +4,75 @@ All notable changes to this pipeline are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com). Record **every**
 hyperparameter change — SDG results are highly sensitive to them.
 
+## [2.4.0] — 2026-06-16
+
+### CI — automated self-test on GitHub Actions
+
+- Added `.github/workflows/ci.yml`: runs on every push / PR to `main` (and
+  manually via *workflow_dispatch*).
+- New `--ci` tier in `scripts/test_pipeline.py` runs the machine-independent
+  subset of the self-test — guards the hard invariants (BOM-free configs,
+  `config.yaml` structure, AAS template ↔ class-ID registry consistency, all
+  modules compile, converter "never keep an unlabeled object" rule, IEC 63278
+  AAS validity) **without** needing Isaac Sim, a GPU, torch/ultralytics, or the
+  git-ignored USD assets. Installs only PyYAML + numpy + Pillow + aas-core3.0
+  (~1 min). The full SDG / train / AL tiers stay local (`run_tests.bat full`).
+- Status badge added to the README.
+- `.ultralytics/` (machine-local ultralytics runtime cache) added to
+  `.gitignore`.
+
+### Dashboard — ③ Inference tab redesign + AL tab reorganisation
+
+- **③ Inference tab** (was separate "③ Inference" harvest tab + "🎥 Live" tab):
+  merged into one tab with a **mode picker** radio button:
+  - **Images with BBoxes / labels** — pick a model and a folder of images,
+    click Run Inference; every image is displayed with predicted bounding boxes
+    and class labels. Uses new `/api/inference_images` endpoint (runs inline,
+    returns per-image box JSON, drawn on canvas via `CLS_COLORS`).
+  - **Live Camera** — source type now has three options: **Webcam** (index),
+    **IP Camera** (RTSP/HTTP URL — OpenCV already handles these), **Video file**.
+    IP cam URL is passed straight to `cv2.VideoCapture()`.
+- **④ Active Learning tab** now contains all three AL workflow phases in order:
+  - **① Harvest real-image candidates** (moved from old Inference tab): run
+    model on real images, keep most-uncertain top-N with pre-labels.
+  - **② Review candidates** (moved from old Inference tab): Accept/Reject grid
+    with ✏ Edit; Accept moves image+labels into a `REAL_<name>` dataset.
+  - **③ AL experiment** (existing): strategy picker, budget controls, gain chart.
+- **`dashboard/server.py`**: new `GET /api/inference_images` endpoint — runs
+  YOLO on a folder inline and returns `[{rel, boxes:[cls,cx,cy,w,h]}, ...]`.
+- **`docs/GUIDE.md`**: sections 6 and 7 rewritten to document the new tab layout.
+
+## [2.3.0] — 2026-06-16
+
+### Docker — full cross-platform support for all Python stages
+
+- **`docker/Dockerfile`** upgraded: single `smartsdg` image covers OD training,
+  AL, CL, Inference and Dashboard; `EXPOSE 8765`; `YOLO_CONFIG_DIR` env var;
+  proper layer caching.
+- **`docker/entrypoint.sh`** (new): mode dispatcher — `dashboard`, `train`,
+  `al`, `cl`, `inference`, `info`, `shell`, `python` passthrough.
+- **`docker/docker-compose.yml`** (new): one-command startup for each stage;
+  `shm_size: 2g` for PyTorch dataloader; GPU via `deploy.resources`; named
+  volume for YOLO weights cache.
+- **`scripts/build_docker.bat`** updated: new image name (`smartsdg`), compose usage hint.
+- **Dashboard (`server.py`)**: Docker mode now injects `--shm-size=2g`,
+  `SMARTSDG_WIN_ROOT` and `SMARTSDG_WIN_VAL_REAL` env vars so Windows→Linux
+  path translation works automatically inside the container.
+- **`OD_training/main.py`**: `_translate_win_paths()` — translates Windows
+  absolute paths in the generated training config to `/workspace/...` and
+  `/valdata/...` when running inside Docker (Linux).
+- **`OD_training/main.py`**: `parse_sdg_metadata_from_path()` — fixed for
+  Linux: `Path(win_path).name` returns the full string on Linux (backslash is
+  not a separator); normalize with `.replace('\\', '/')` first.
+- **`requirements.txt`**: fixed `aas-core3.0rc02` → `aas-core3.0` (wrong
+  package installed as `aas_core3_rc02`, not `aas_core3`); bumped
+  `ultralytics` `8.2.2` → `8.3.157` to match conda env and support YOLOv12
+  (`C3k2`, `A2C2f` blocks).
+- **`AAS/CA_Modul-OD_pipeline_v2.0.json`**: default training `batch_size`
+  `32` → `8` (safe for 8 GB VRAM with YOLOv12l).
+- **Docs**: `INSTALL.md`, `PORTABILITY.md`, `README.md` rewritten to make
+  Docker the primary setup path; `GUIDE.md` updated.
+
 ## [2.2.0] — 2026-06-15
 
 Major feature wave (all dashboard-integrated, self-test 10/10):

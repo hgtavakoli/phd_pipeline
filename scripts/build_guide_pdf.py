@@ -34,12 +34,11 @@ EDGE_CANDIDATES = [
 
 # tab -> (filename, caption) for screenshots
 TABS = [
-    ("sdg",     "Synthetic Data Generation — pick components, scene and quality filters"),
-    ("train",   "Object Detection Training — per-camera, record mode"),
-    ("harvest", "Inference — harvest the most-uncertain real images as AL candidates"),
-    ("live",    "Live Inference — webcam / video detection in real time"),
-    ("al",      "Active Learning — strategy, camera, budget, and the gain overview"),
-    ("datasets","Datasets — browse, preview boxes, edit labels, delete"),
+    ("sdg",       "Synthetic Data Generation — pick components, scene and quality filters"),
+    ("train",     "Object Detection Training — per-camera, record mode"),
+    ("inference", "Inference — Images mode (BBoxes) or Live Camera (webcam/IP cam/video)"),
+    ("al",        "Active Learning — Harvest → Review candidates → AL experiment + gain chart"),
+    ("datasets",  "Datasets — browse, preview boxes, edit labels, delete"),
 ]
 
 # markdown files in order, each becomes a chapter

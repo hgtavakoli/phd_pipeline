@@ -1,5 +1,7 @@
 # SmartSDG Pipeline — v2 (Working Copy)
 
+[![CI](https://github.com/hgtavakoli/phd_pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/hgtavakoli/phd_pipeline/actions/workflows/ci.yml)
+
 > **Author:** Hooman Tavakoli Ghinani
 > **Version:** 2.2.0 — see [CHANGELOG.md](CHANGELOG.md)
 > **Status:** all five stages dashboard-integrated; every action recorded in AAS (per-dataset records + a factory `pipeline_history` event log, IEC 63278).
@@ -35,8 +37,14 @@ SDG_v2/
 │   ├── server.py              ← local dashboard server (stdlib only)
 │   └── index.html             ← dashboard UI
 │
+├── docker/
+│   ├── Dockerfile             ← image: torch+ultralytics+aas_core3 (no Isaac Sim)
+│   ├── docker-compose.yml     ← `up dashboard` / `run train` / `run al` etc.
+│   └── entrypoint.sh          ← mode dispatcher (dashboard/train/al/cl/inference)
+│
 ├── scripts/
 │   ├── launch_dashboard.bat   ← start the dashboard (recommended entry point)
+│   ├── build_docker.bat       ← build the smartsdg Docker image
 │   ├── run_sdg.bat            ← interactive CLI launcher (validated defaults)
 │   ├── run_tests.bat          ← pipeline self-test (add `full` for SDG+training)
 │   └── test_pipeline.py       ← the test suite itself
@@ -65,11 +73,34 @@ SDG_v2/
 
 ## Quick start
 
-### Dashboard (recommended)
+### Option A — Docker (recommended, no Python install needed)
 
 ```bat
-:: activate your training env first so the Training tab uses it, e.g.:
-::   conda activate yolov12
+:: 1. Build the image once (~5 GB download)
+scripts\build_docker.bat
+
+:: 2. Start the dashboard
+docker compose -f docker/docker-compose.yml up dashboard
+```
+
+Opens **http://localhost:8765**. All stages (train / AL / CL) run inside the
+container — GPU is used automatically via `--gpus all`.
+
+Create `pipeline_config.json` at the project root to enable Docker mode and
+point to your real validation images:
+
+```json
+{
+  "docker_enabled": true,
+  "val_real": "C:/path/to/your/val_real"
+}
+```
+
+### Option B — Conda env (no Docker)
+
+```bat
+:: activate your training env first so the Training tab uses it:
+conda activate yolov12
 scripts\launch_dashboard.bat
 ```
 
@@ -202,8 +233,13 @@ test artifacts are cleaned up automatically.
 
 ## Requirements
 
-- **SDG**: NVIDIA Isaac Sim 4.5 (Windows native, `C:\Users\hota02\Documents\omniverse`), RTX GPU
-- **OD/AL/CL**: Python 3.10, `pip install -r requirements.txt`
+| Stage | Requirement |
+|---|---|
+| **SDG** | NVIDIA Isaac Sim 4.5 (Windows native), RTX GPU |
+| **OD / AL / CL / Dashboard** | Docker Desktop + NVIDIA GPU ← recommended |
+| **OD / AL / CL / Dashboard** | Python 3.10 + `pip install -r requirements.txt` ← alternative |
+
+See [docs/INSTALL.md](docs/INSTALL.md) for the full setup walkthrough.
 
 ## Git / what is NOT in the repository
 

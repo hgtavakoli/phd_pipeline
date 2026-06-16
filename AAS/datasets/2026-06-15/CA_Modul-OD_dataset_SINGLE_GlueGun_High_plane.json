@@ -57063,7 +57063,7 @@
         {
          "idShort": "base_data_dir",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\SmartSDG\\Datasets\\yolo_experiments\\SINGLE_BlackCabin_Medium_plane\\",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\SmartSDG\\Datasets\\yolo_experiments\\SINGLE_GlueGun_High_plane\\",
          "modelType": "Property"
         },
         {
@@ -57119,7 +57119,7 @@
         {
          "idShort": "exp_names_to_train",
          "valueType": "xs:string",
-         "value": "SINGLE_BlackCabin_Medium_plane",
+         "value": "SINGLE_GlueGun_High_plane",
          "modelType": "Property"
         },
         {
@@ -57131,13 +57131,13 @@
         {
          "idShort": "cameras_to_train",
          "valueType": "xs:string",
-         "value": "Replicator, Replicator_01",
+         "value": "Replicator",
          "modelType": "Property"
         },
         {
          "idShort": "weights",
          "valueType": "xs:string",
-         "value": "./yolov12l.pt",
+         "value": "yolov12l.pt",
          "modelType": "Property"
         },
         {
@@ -57372,31 +57372,31 @@
         {
          "idShort": "input_model",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\yolo11n.pt",
+         "value": "",
          "modelType": "Property"
         },
         {
          "idShort": "current_classes",
          "valueType": "xs:string",
-         "value": "Ylid, YTrailer, Cabin, GlueGun, BLid, BTrailer, FChassis, Rchassis",
+         "value": "Ylid, YTrailer, Cabin, GlueGun, BLid, BTrailer, FChassis, Rchassis, BlackCabin",
          "modelType": "Property"
         },
         {
          "idShort": "new_classes",
          "valueType": "xs:string",
-         "value": "BlackCabin",
+         "value": "",
          "modelType": "Property"
         },
         {
          "idShort": "new_data_dir",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\continual_learning\\data\\new",
+         "value": "",
          "modelType": "Property"
         },
         {
          "idShort": "replay_data_dir",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\continual_learning\\data\\replay",
+         "value": "",
          "modelType": "Property"
         },
         {
@@ -57444,7 +57444,250 @@
         {
          "idShort": "exp_name",
          "valueType": "xs:string",
-         "value": "cl_BlackCabin",
+         "value": "cl_step",
+         "modelType": "Property"
+        }
+       ]
+      },
+      {
+       "idShort": "GenerationParameters",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "mode",
+         "valueType": "xs:string",
+         "value": "single",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "light",
+         "valueType": "xs:string",
+         "value": "High",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "samples",
+         "valueType": "xs:string",
+         "value": "4",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "env",
+         "valueType": "xs:string",
+         "value": "plane",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "width",
+         "valueType": "xs:string",
+         "value": "320",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "height",
+         "valueType": "xs:string",
+         "value": "240",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "min_visibility",
+         "valueType": "xs:string",
+         "value": "0.95",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "spawn_radius",
+         "valueType": "xs:string",
+         "value": "0.2",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "min_separation",
+         "valueType": "xs:string",
+         "value": "0.05",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "iou_threshold",
+         "valueType": "xs:string",
+         "value": "0.7",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "drop_truncated",
+         "valueType": "xs:string",
+         "value": "True",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "filter_overlaps",
+         "valueType": "xs:string",
+         "value": "True",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "seed",
+         "valueType": "xs:string",
+         "value": "42",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "components",
+         "valueType": "xs:string",
+         "value": "GlueGun",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "generated_at",
+         "valueType": "xs:string",
+         "value": "2026-06-15T21:18:15",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "final_images",
+         "valueType": "xs:string",
+         "value": "8",
+         "modelType": "Property"
+        }
+       ]
+      },
+      {
+       "idShort": "RunHistory",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "run_20260615T211815",
+         "modelType": "SubmodelElementCollection",
+         "value": [
+          {
+           "idShort": "stage",
+           "valueType": "xs:string",
+           "value": "SDG",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "status",
+           "valueType": "xs:string",
+           "value": "success",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "finished_at",
+           "valueType": "xs:string",
+           "value": "2026-06-15T21:18:15",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "duration_s",
+           "valueType": "xs:string",
+           "value": "49",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "final_images",
+           "valueType": "xs:string",
+           "value": "8",
+           "modelType": "Property"
+          }
+         ]
+        },
+        {
+         "idShort": "run_20260615T212006",
+         "modelType": "SubmodelElementCollection",
+         "value": [
+          {
+           "idShort": "stage",
+           "valueType": "xs:string",
+           "value": "training",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "status",
+           "valueType": "xs:string",
+           "value": "success",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "finished_at",
+           "valueType": "xs:string",
+           "value": "2026-06-15T21:20:06",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "duration_s",
+           "valueType": "xs:string",
+           "value": "80",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "map50",
+           "valueType": "xs:string",
+           "value": "0.0",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "map50_95",
+           "valueType": "xs:string",
+           "value": "0.0",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "epochs",
+           "valueType": "xs:string",
+           "value": "1",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "model_path",
+           "valueType": "xs:string",
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
+           "modelType": "Property"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "idShort": "Results",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "stage",
+         "valueType": "xs:string",
+         "value": "training",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "updated_at",
+         "valueType": "xs:string",
+         "value": "2026-06-15T21:20:06",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "map50",
+         "valueType": "xs:string",
+         "value": "0.0",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "map50_95",
+         "valueType": "xs:string",
+         "value": "0.0",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "epochs",
+         "valueType": "xs:string",
+         "value": "1",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "model_path",
+         "valueType": "xs:string",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
          "modelType": "Property"
         }
        ]

@@ -73,8 +73,36 @@ throughout, so you can train and compare each viewpoint independently.
 
 ## 3. Starting the dashboard
 
+### With Docker (recommended — no Python install needed)
+
+```bat
+:: Build the image once (first time only — ~5 GB download):
+scripts\build_docker.bat
+
+:: Then start the dashboard:
+docker compose -f docker/docker-compose.yml up dashboard
+```
+
+Opens **http://localhost:8765**.
+
+Enable Docker mode in `pipeline_config.json` (project root, git-ignored):
+
+```json
+{
+  "docker_enabled": true,
+  "val_real": "C:/path/to/your/val_real"
+}
+```
+
+With Docker mode on, training / AL / CL runs are automatically routed into the
+container (`--gpus all --shm-size=2g`). SDG and live inference always run
+natively.
+
+### Without Docker (conda env)
+
 ```bat
 :: activate the training environment first, then:
+conda activate yolov12
 scripts\launch_dashboard.bat
 ```
 
@@ -82,8 +110,12 @@ This opens `http://127.0.0.1:8765`. The top bar shows a **status badge**
 (idle / running / finished). The tabs follow the pipeline order:
 
 ```
- ① SDG | ② Training | ③ Inference | ④ Active Learning | Console | Datasets | Results | Docs
+ ① SDG | ② Training | ③ Inference | ④ Active Learning | ⑤ Continual Learning | Console | Datasets | Results | Docs
 ```
+
+The **③ Inference** tab has a mode picker: **Images** (run model on a folder,
+view BBoxes) or **Live Camera** (webcam / IP cam / video MJPEG stream).
+The **④ Active Learning** tab contains all three phases: Harvest → Review → AL experiment.
 
 Any long-running job streams its output live to the **Console** tab.
 
@@ -152,21 +184,63 @@ up in the **Results** tab, one row per camera run, with a Weights ✓/— column
 
 ---
 
-## 6. Step ③ — Inference & harvesting
+## 6. Step ③ — Inference
+
+The **③ Inference** tab has two modes, selected by the radio button at the top:
+
+### Mode A — Images with BBoxes / labels
+
+Run a trained model over a folder of images and view the detections.
+
+1. **Model** — pick a `best.pt` from your training runs.
+2. **Images folder** — click **📁 Browse…** to navigate to the folder.
+3. **Conf threshold** — boxes below this confidence are not drawn.
+4. **Max images** — how many images to process (default 30).
+
+Press **▶ Run Inference**. Every image is processed and displayed with predicted
+bounding boxes and class labels. Use this to quickly sanity-check a model on any
+image set — no saving, no scoring, just visual results.
+
+### Mode B — Live Camera
+
+Stream annotated detections in real time. Three source types:
+
+| Source | How |
+|---|---|
+| **Webcam** | Select the camera index (click **detect** to probe 0–3) |
+| **IP Camera** | Paste the full RTSP or HTTP URL, e.g. `rtsp://admin:pass@192.168.1.10:554/stream` |
+| **Video file** | Browse to an `.mp4 / .avi / .mov / .mkv` file — plays through once |
+
+Press **▶ Start**; the server opens the source and streams annotated frames to
+the browser as MJPEG. Press **■ Stop** to release the camera / stream.
+
+> **Note:** Live webcam does not work inside Docker on Windows (USB passthrough
+> is unreliable). Run the dashboard natively for webcam use. IP cameras on the
+> same network work from both native and Docker modes.
+
+---
+
+## 7. Step ④ — Active Learning
+
+The **④ Active Learning** tab has three sections in order:
+
+### ① Harvest real-image candidates
 
 **Goal:** use a trained model to find the **real** images most worth labelling.
 
 1. **Model** — pick a `best.pt` from your training runs.
-2. **Real images folder** — click **📁 Browse…** to navigate your drives and pick
-   the folder (no need to type the path).
+2. **Real images folder** — click **📁 Browse…** to navigate to the folder.
 3. **Keep top-N uncertain** — how many of the hardest frames to keep.
 4. **Conf threshold** — detection confidence used while scoring.
 
 Press **▶ Harvest**. The model scores every real image by uncertainty and keeps
-the top-N, saving each with its predicted boxes as **pre-labels**. They appear in
-the **Review candidates** grid with boxes drawn.
+the top-N, saving each with its predicted boxes as **pre-labels**.
 
-For each candidate:
+### ② Review candidates
+
+After Harvest, select a harvest run from the dropdown. Each candidate is shown
+with its predicted boxes:
+
 - **✏ Edit** — open the box editor to correct the labels (see §8).
 - **✔ Accept** — moves the image + labels into a `REAL_<name>` dataset (then
   trainable / AL-able like any dataset).
@@ -175,9 +249,7 @@ For each candidate:
 This is the human-in-the-loop: the model tells you which real frames are worth
 your labelling time.
 
----
-
-## 7. Step ④ — Active Learning
+### ③ Active Learning experiment
 
 **Goal:** reach a target accuracy with far fewer labelled images, by letting the
 model choose what to label next. Full details in
@@ -259,12 +331,16 @@ A complete cycle, all from the dashboard:
 ② Training:   AAS = that dataset, camera = Replicator only, 50 epochs, batch 8,
               weights yolov12l.pt → best.pt in results/.../exp1/...
 
-③ Inference:  model = that best.pt, Browse to your real-images folder,
+③ Inference:  [Images mode] model = that best.pt, Browse to your images folder,
+              conf 0.25 → Run Inference → view results with BBoxes
+              [Live Camera mode] pick webcam or RTSP URL → Start → live stream
+
+④ AL (Harvest):  model = that best.pt, Browse to your real-images folder,
               keep top 50, conf 0.10 → Harvest
               → review the 50 hardest real frames, Edit/Accept the good ones
               → creates dataset REAL_<folder>
 
-④ AL:         dataset = the synthetic pool, camera = Replicator,
+④ AL (experiment): dataset = the synthetic pool, camera = Replicator,
               strategy ppal_feat, 3 rounds, init 10, add 10
               → run again with strategy random
               → Gain overview shows ppal_feat above random = AL works
