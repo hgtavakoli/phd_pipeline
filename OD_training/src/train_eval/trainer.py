@@ -74,7 +74,9 @@ def run_training_pipeline(config):
                             "save": True,
                             "save_period": config['training'].get('save_period', -1),
                             "workers": config['training'].get('workers', 8),
-                            "device": 0
+                            "device": 0,
+                            "cos_lr": config['training'].get('cos_lr', False),
+                            "patience": config['training'].get('patience', 100),
                         }
                         train_args = {k: v for k, v in train_args.items() if v is not None}
                         train_results = model.train(**train_args)

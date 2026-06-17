@@ -46,7 +46,8 @@ defaults:
     min_visibility: 0.95     # keep objects >= this fraction visible (0 = off)
     spawn_radius: 0.2        # metres
     min_separation: 0.05     # metres
-    iou_threshold: 0.7       # overlap filter
+    iou_threshold: 0.7       # overlap filter: drop frame if two boxes' IoU >= this
+    containment_threshold: 0.75  # drop frame if a small box is >= this fraction inside a bigger one
     drop_truncated: true
     filter_overlaps: true
 

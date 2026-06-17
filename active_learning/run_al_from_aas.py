@@ -141,6 +141,37 @@ if __name__ == '__main__':
         print("\n--- Starting Active Learning Pipeline ---")
         run_al_pipeline(experiment_config)
 
+        # --- Step 4: PASSPORT — self-document this CLI run into the dataset AAS ---
+        try:
+            from pathlib import Path as _P
+            repo_root = _P(__file__).resolve().parent.parent
+            if str(repo_root) not in sys.path:
+                sys.path.insert(0, str(repo_root))
+            from aas_passport import record_run
+            base = experiment_config.get('base_data_dir') or ''
+            ds_name = (_P(base.replace('\\', '/').rstrip('/')).name if base
+                       else _P(args.aas_file).stem.replace('CA_Modul-OD_dataset_', ''))
+            al_cfg = {k: experiment_config.get(k) for k in
+                      ('al_strategy', 'al_class_balance', 'al_rounds', 'initial_subset_size',
+                       'add_per_round', 'epochs_per_round', 'al_score_threshold', 'ud_split')
+                      if experiment_config.get(k) is not None}
+            meas = {}
+            try:
+                import csv
+                out = experiment_config.get('output_dir')
+                cands = list(_P(out).rglob('al_summary.csv')) if out else []
+                if cands:
+                    rows = list(csv.reader(open(max(cands, key=lambda f: f.stat().st_mtime))))
+                    if len(rows) >= 2:
+                        meas['al_rounds_logged'] = len(rows) - 1
+            except Exception:
+                pass
+            p = record_run(ds_name, "AL", config=al_cfg, measurements=meas,
+                           run_label="AL", base_data_dir=(base or None))
+            print(f"--- AAS passport updated: {p} ---" if p else "--- AAS passport update skipped ---")
+        except Exception as _e:
+            print(f"--- AAS passport update skipped: {_e} ---")
+
     except (FileNotFoundError, ValueError, RuntimeError) as e:
         print(f"❌ FATAL ERROR: {e}", file=sys.stderr)
         sys.exit(1)

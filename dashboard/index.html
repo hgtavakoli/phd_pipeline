@@ -157,6 +157,7 @@
       <div><label>Spawn radius (m) <span data-info="sdg_spawn"></span></label><input id="fSpawn" type="number" step="0.05" value="0.2" style="width:80px"></div>
       <div><label>Min separation (m) <span data-info="sdg_sep"></span></label><input id="fSep" type="number" step="0.01" value="0.05" style="width:80px"></div>
       <div><label>IoU overlap filter <span data-info="sdg_iou"></span></label><input id="fIou" type="number" step="0.05" value="0.7" style="width:80px"></div>
+      <div><label>Containment filter <span data-info="sdg_cont"></span></label><input id="fCont" type="number" step="0.05" value="0.75" style="width:80px"></div>
       <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fTrunc" type="checkbox" checked> drop border-cut frames</label><span data-info="sdg_trunc"></span></div>
       <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="fOvl" type="checkbox" checked> overlap filter</label><span data-info="sdg_ovl"></span></div>
     </div>
@@ -195,7 +196,7 @@
     <h2>② Object Detection Training <span data-info="train_overview"></span></h2>
     <p class="muted">Fine-tune a YOLOv12 detector on a generated dataset, driven by its AAS config. Each camera geometry trains as its own run.</p>
     <div class="row">
-      <div><label>AAS config <span data-info="train_aas"></span></label><select id="fAas" style="min-width:320px"></select>
+      <div><label>AAS config <span data-info="train_aas"></span></label><select id="fAas" style="min-width:320px" onchange="onAasChange()"></select>
         <button class="secondary" style="padding:5px 10px" title="Refresh the AAS config list" onclick="loadAasList()">⟳</button></div>
       <div><label>Cameras <span data-info="train_cameras"></span></label>
         <span class="chips">
@@ -210,7 +211,25 @@
       <div><label>Batch size <span data-info="train_batch"></span></label><input id="tBatch" type="number" min="1" placeholder="AAS (32)" style="width:90px"></div>
       <div><label>Base weights <span data-info="train_weights"></span></label><select id="tWeights"><option value="">AAS (./yolov12l.pt)</option></select></div>
       <div><label>Save every N epochs <span data-info="train_save"></span></label><input id="tSave" type="number" min="1" placeholder="AAS (10)" style="width:90px"></div>
+      <div><label>Patience <span class="muted" style="font-size:.82rem">(early stop)</span></label><input id="tPatience" type="number" min="1" placeholder="50" style="width:80px"></div>
+      <div><label style="display:inline-flex;gap:5px;align-items:center"><input type="checkbox" id="tCosLr"> Cosine LR</label></div>
       <button class="primary" id="btnRunTrain" onclick="runTrain()">▶ Run training</button>
+    </div>
+    <div class="row" style="margin-top:6px;align-items:flex-start;flex-wrap:wrap">
+      <div>
+        <label>Validation folder <span data-info="train_val"></span></label>
+        <div style="margin-top:5px;display:flex;flex-direction:column;gap:4px">
+          <span class="chips" style="display:inline-flex;gap:14px">
+            <label style="display:inline-flex;gap:5px;align-items:center"><input type="radio" name="trainVal" value="aas" checked onchange="trainValToggle()"> 📋 From AAS</label>
+            <label style="display:inline-flex;gap:5px;align-items:center"><input type="radio" name="trainVal" value="custom" onchange="trainValToggle()"> 📁 Custom path</label>
+          </span>
+          <p id="trainValHint" class="muted" style="margin:2px 0;font-size:.83rem;font-style:italic"></p>
+          <div id="trainValCustomBox" style="display:none;align-items:center;gap:6px">
+            <input id="tValPath" type="text" placeholder="C:\path\to\val_real" style="width:340px">
+            <button class="secondary" style="padding:5px 10px" onclick="openFolderPickerFor('tValPath')">📁 Browse…</button>
+          </div>
+        </div>
+      </div>
     </div>
     <p class="muted"><b>Record mode:</b> empty fields use the values stored in the selected AAS file; filled fields are <b>saved into the dataset's AAS file</b> (under <code>AAS\datasets\</code>) so it always documents your latest training parameters. Pipeline templates at the AAS root (v0.x, v2.0) are never modified — overrides there apply to the run only.
     Each selected camera trains as its own run — untick one to train on a single camera.
@@ -967,13 +986,13 @@ function loadComponents(){
     }
   });
 }
-// Populate the class-source dropdown (preselect the v2.0 template, or keep the
+// Populate the class-source dropdown (preselect the v3.0 template, or keep the
 // current choice on refresh), then reload the component list from it.
 function loadClassAasList(){
   const cur = $('fClassAas').value;
   fetch('/api/aas').then(r=>r.json()).then(files=>{
     $('fClassAas').innerHTML = files.map(f=>
-      `<option ${f===cur||(!cur&&f.includes('v2.0'))?'selected':''}>${f}</option>`).join('');
+      `<option ${f===cur||(!cur&&f.includes('v3.0'))?'selected':''}>${f}</option>`).join('');
     loadComponents();
   });
 }
@@ -993,11 +1012,12 @@ function sdgPayload(){
   const [w,h] = $('fRes').value.split('x').map(Number);
   return {
     mode: $('fMode').value, components: selectedComps(),
+    class_aas: $('fClassAas').value,
     light: $('fLight').value, samples: +$('fSamples').value,
     env: $('fEnv').value, width: w, height: h,
     min_visibility: +$('fVis').value,
     spawn_radius: +$('fSpawn').value, min_separation: +$('fSep').value,
-    iou_threshold: +$('fIou').value,
+    iou_threshold: +$('fIou').value, containment_threshold: +$('fCont').value,
     drop_truncated: $('fTrunc').checked, filter_overlaps: $('fOvl').checked,
     seed: $('fSeed').value ? +$('fSeed').value : null,
     renderer: $('fRenderer').value || null,
@@ -1014,7 +1034,7 @@ function updatePreview(){
   else c += ` --component_class ${p.components[0]||'GlueGun'}`;
   if(p.min_visibility>0) c += ` --min_visibility ${p.min_visibility}`;
   if(p.drop_truncated) c += ' --drop_truncated';
-  if(p.filter_overlaps) c += ` --filter_overlaps --iou_threshold ${p.iou_threshold}`;
+  if(p.filter_overlaps) c += ` --filter_overlaps --iou_threshold ${p.iou_threshold} --containment_threshold ${p.containment_threshold}`;
   if(p.seed) c += ` --seed ${p.seed}`;
   if(p.renderer) c += ` --renderer ${p.renderer}`;
   if(p.spp) c += ` --spp ${p.spp}`;
@@ -1039,6 +1059,9 @@ async function runTrain(){
   if($('cam1').checked) cams.push('Replicator');
   if($('cam2').checked) cams.push('Replicator_01');
   if(!cams.length){alert('Select at least one camera');return;}
+  const trainValMode=(document.querySelector('input[name=trainVal]:checked')||{}).value||'aas';
+  const valPath=trainValMode==='custom'?($('tValPath').value||'').trim():'';
+  if(trainValMode==='custom'&&!valPath){alert('Enter or browse to a validation folder path');return;}
   const r = await post('/api/run_train', {
     aas_file: $('fAas').value, cameras: cams,
     epochs: $('tEpochs').value ? +$('tEpochs').value : null,
@@ -1046,6 +1069,9 @@ async function runTrain(){
     batch_size: $('tBatch').value ? +$('tBatch').value : null,
     save_period: $('tSave').value ? +$('tSave').value : null,
     weights: $('tWeights').value ? './'+$('tWeights').value : null,
+    val_data_path: valPath || null,
+    patience: $('tPatience').value ? +$('tPatience').value : null,
+    cos_lr: $('tCosLr').checked,
   });
   if(!r.ok){alert(r.error);return;}
   startConsole('OD training');
@@ -1132,10 +1158,11 @@ async function loadAlResults(){
 async function stopJob(){ if(confirm('Stop the running job?')) await post('/api/stop'); }
 
 // ---------- live console ----------
-let logOffset = 0, polling = null;
+let logOffset = 0, polling = null, committedLog = '';
 function startConsole(name){
   $('jobName').textContent = name;
   $('console').textContent = '';
+  committedLog = '';
   logOffset = 0;
   showTab('console');
   if(!polling) polling = setInterval(pollLogs, 1000);
@@ -1143,11 +1170,13 @@ function startConsole(name){
 async function pollLogs(){
   try{
     const r = await fetch(`/api/logs?since=${logOffset}`).then(x=>x.json());
-    if(r.lines.length){
-      $('console').textContent += r.lines.join('\n') + '\n';
+    if(r.lines && r.lines.length){
+      committedLog += r.lines.join('\n') + '\n';
       logOffset = r.next;
-      if($('autoScroll').checked) $('console').scrollTop = $('console').scrollHeight;
     }
+    // committed history + the single live (in-progress) line, redrawn each poll
+    $('console').textContent = committedLog + (r.live || '');
+    if($('autoScroll').checked) $('console').scrollTop = $('console').scrollHeight;
   }catch(e){}
 }
 async function pollStatus(){
@@ -1190,10 +1219,15 @@ async function showAasRecord(rel,name){
   const r = await fetch('/api/dataset_aas?rel='+encodeURIComponent(rel.replace(/\\\\/g,'\\'))).then(x=>x.json());
   const area=$('previewArea');
   if(!r.found){ area.innerHTML=`<h3>AAS record — ${name}</h3><p class="muted">${r.error||'no record'}</p>`; return; }
-  let html=`<h3>📋 AAS record — ${name} <span class="muted">(${r.aas_file})</span></h3>`;
-  html+=`<div style="display:flex;flex-wrap:wrap;gap:24px">`;
-  html+=`<div><h4>Generation parameters</h4>${_kvTable(r.generation)}</div>`;
-  html+=`<div><h4>Latest results</h4>${_kvTable(r.results)}</div>`;
+  let html=`<h3>📋 AAS passport — ${name} <span class="muted">(${r.aas_file})</span></h3>`;
+  html+=`<p class="muted">Hyperparameter survey — every stage reads from and writes into this one record (the dataset passport).</p>`;
+  const card=(title,obj)=>`<div style="border:1px solid #ccc;border-radius:8px;padding:8px 12px;min-width:200px"><h4 style="margin:4px 0">${title}</h4>${_kvTable(obj)}</div>`;
+  html+=`<div style="display:flex;flex-wrap:wrap;gap:16px">`;
+  html+=card('① SDG / generation', r.generation);
+  html+=card('② Training', r.training);
+  html+=card('④ Active learning', r.active_learning);
+  html+=card('⑤ Continual learning', r.continual_learning);
+  html+=card('★ Latest results', r.results);
   html+=`</div>`;
   if(r.runs && r.runs.length){
     const cols=['stage','status','finished_at','duration_s','map50','map50_95','gain','final_images','epochs'];
@@ -1222,9 +1256,19 @@ async function makeAas(rel){
 // Class colors (global IDs follow COMPONENTS order from config.yaml)
 const CLS_COLORS = ['#ffd400','#ff8c00','#4da3ff','#76b900','#ff5d5d','#b07cff','#00d0c0','#ff7ab8','#cccccc','#8fd14f','#f29e4c'];
 
-async function preview(rel,name){
-  const imgs = await fetch('/api/preview?rel='+encodeURIComponent(rel)).then(r=>r.json());
-  $('previewArea').innerHTML = `<h3>Preview — ${name}</h3><div class="thumbs" id="thumbBox"></div>
+async function preview(rel,name,camera){
+  const cams = await fetch('/api/cameras?rel='+encodeURIComponent(rel)).then(r=>r.json()).catch(()=>[]);
+  if(camera===undefined) camera = (Array.isArray(cams) && cams.length) ? cams[0] : '';
+  const url = '/api/preview?rel='+encodeURIComponent(rel) + (camera?'&camera='+encodeURIComponent(camera):'');
+  const imgs = await fetch(url).then(r=>r.json());
+  const relJS = rel.replace(/\\/g,'\\\\'), nameJS = name.replace(/'/g,"\\'");
+  let camSel = '';
+  if(Array.isArray(cams) && cams.length>1){
+    camSel = '<div class="muted" style="margin-bottom:8px">Camera: ' + cams.map(c=>
+      `<label style="margin-right:12px;cursor:pointer"><input type="radio" name="prevCam" value="${c}" ${c===camera?'checked':''} onchange="preview('${relJS}','${nameJS}',this.value)"> ${c}</label>`).join('') + '</div>';
+  }
+  if(imgs && imgs.error){ $('previewArea').innerHTML = `<h3>Preview — ${name}</h3>${camSel}<p class="muted">${imgs.error}</p>`; return; }
+  $('previewArea').innerHTML = `<h3>Preview — ${name}${camera?' · '+camera:''}</h3>${camSel}<div class="thumbs" id="thumbBox"></div>
     <div class="muted" id="legend"></div>`;
   $('legend').innerHTML = COMPONENTS.map((n,i)=>`<span style="color:${CLS_COLORS[i%CLS_COLORS.length]}">■ ${n}</span>`).join(' &nbsp; ');
   for(const p of imgs){
@@ -1234,7 +1278,7 @@ async function preview(rel,name){
     else wrap.insertAdjacentHTML('beforeend', `<img src="/img?p=${encodeURIComponent(p)}" title="${p}">`);
     const labelRel = p.replace(/\.(png|jpg|jpeg)$/i,'.txt');
     wrap.insertAdjacentHTML('beforeend',
-      `<br><button class="secondary" style="padding:2px 8px;font-size:.72rem" onclick="openEditor('${p.replace(/\\/g,'\\\\')}','${labelRel.replace(/\\/g,'\\\\')}',()=>preview('${rel.replace(/\\/g,'\\\\')}','${name}'))">✏ Edit labels</button>`);
+      `<br><button class="secondary" style="padding:2px 8px;font-size:.72rem" onclick="openEditor('${p.replace(/\\/g,'\\\\')}','${labelRel.replace(/\\/g,'\\\\')}',()=>preview('${relJS}','${nameJS}','${camera}'))">✏ Edit labels</button>`);
     $('thumbBox').appendChild(wrap);
   }
 }
@@ -1278,7 +1322,24 @@ async function loadDoc(f){ $('docText').textContent = await fetch('/api/doc?f='+
 function loadAasList(){
   fetch('/api/aas').then(r=>r.json()).then(files=>{
     const cur = $('fAas').value;
-    $('fAas').innerHTML = files.map(f=>`<option ${f===cur||(!cur&&f.includes('v2.0'))?'selected':''}>${f}</option>`).join('');});
+    $('fAas').innerHTML = files.map(f=>`<option ${f===cur||(!cur&&f.includes('v3.0'))?'selected':''}>${f}</option>`).join('');
+    onAasChange();
+  });
+}
+function onAasChange(){
+  const aas=($('fAas')||{}).value||'';
+  const hint=$('trainValHint'); if(!hint) return;
+  hint.textContent='';
+  if(!aas) return;
+  fetch('/api/aas_val?aas='+encodeURIComponent(aas)).then(r=>r.json()).then(d=>{
+    hint.textContent = d.val_data_path
+      ? 'Current AAS value: '+d.val_data_path
+      : '(no val_data_path set in this AAS)';
+  }).catch(()=>{});
+}
+function trainValToggle(){
+  const custom=(document.querySelector('input[name=trainVal]:checked')||{}).value==='custom';
+  $('trainValCustomBox').style.display=custom?'flex':'none';
 }
 loadAasList();
 fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').textContent='v'+v.trim());
@@ -1291,7 +1352,7 @@ fetch('/api/defaults').then(r=>r.json()).then(d=>{
   setVal('fLight',s.light); setVal('fSamples',s.samples); setVal('fEnv',s.env);
   if(s.width&&s.height) setVal('fRes', s.width+'x'+s.height);
   setVal('fVis', (s.min_visibility!=null)?String(s.min_visibility):null);
-  setVal('fSpawn',s.spawn_radius); setVal('fSep',s.min_separation); setVal('fIou',s.iou_threshold);
+  setVal('fSpawn',s.spawn_radius); setVal('fSep',s.min_separation); setVal('fIou',s.iou_threshold); setVal('fCont',s.containment_threshold);
   setChk('fTrunc',s.drop_truncated); setChk('fOvl',s.filter_overlaps);
   // Active learning
   setVal('alStrategy',a.strategy); setChk('alBalance',a.class_balance);
@@ -1362,6 +1423,8 @@ Object.assign(INFO, {
     long:'Keeps objects from sitting on top of each other, which prevents occlusion at the source. Combined with a small spawn radius you get tight but non-overlapping scenes. 0.05 m default.'},
   sdg_iou:{short:'Overlap filter threshold: drop a frame if two label boxes overlap by at least this IoU.',
     long:'A safety net for extreme box collisions. With min-visibility on, real occlusion is already handled, so this rarely fires. 0.7 default.'},
+  sdg_cont:{short:'Containment threshold: drop a frame if a small box is at least this fraction inside a bigger one.',
+    long:'Catches a small object nested inside a big one — IoU stays low there (the union is dominated by the big box) so the IoU filter misses it. Measured as intersection / smaller-box area. 0.75 default.'},
   sdg_trunc:{short:'Drop whole frames containing an object cut off by the image border.',
     long:'A partially-out-of-frame object would have an inaccurate box, so the entire frame is discarded rather than kept with a bad label.'},
   sdg_ovl:{short:'Enable the IoU overlap filter (uses the IoU value to the left).',
@@ -1387,6 +1450,8 @@ Object.assign(INFO, {
     long:'Larger = faster and smoother gradients but more GPU memory. On 8 GB use 8–16 at 640 with YOLOv12-L, or -1 to auto-fit.'},
   train_weights:{short:'Starting weights (default: YOLOv12-L).',
     long:'The pretrained checkpoint to fine-tune from. YOLOv12-L is the project default; a smaller model trains faster for quick tests.'},
+  train_val:{short:'Validation folder used to score the model after each epoch and pick best.pt.',
+    long:'\"From AAS\" uses the val_data_path already stored in the selected AAS (shown as a hint). \"Custom path\" overrides it for this run and saves the new path back into the dataset AAS so the run is fully reproducible. In Docker mode the custom folder is also mounted automatically at /valdata.'},
   train_save:{short:'Checkpoint frequency — save a model every N epochs.',
     long:'Lets you keep intermediate models and resume. -1 saves only the final/best.'},
   // ----- Inference / harvest -----

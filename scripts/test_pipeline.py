@@ -33,7 +33,7 @@ SMARTSDG = ROOT / "SmartSDG"
 OD_DIR = ROOT / "OD_training"
 AAS_DIR = ROOT / "AAS"
 SDG_CONFIG = SMARTSDG / "src" / "config" / "config.yaml"
-TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v2.0.json"
+TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v3.0.json"
 sys.path.insert(0, str(ROOT))
 import config_paths
 ISAAC_PYTHON = Path(config_paths.resolve_isaac_python())
@@ -119,13 +119,15 @@ def t_compile():
              SMARTSDG / "src" / "yolo_converter.py", SMARTSDG / "src" / "config_process.py",
              SMARTSDG / "src" / "config_loader.py", OD_DIR / "main.py",
              ROOT / "dashboard" / "server.py",
+             OD_DIR / "src" / "train_eval" / "trainer_aas.py",
              ROOT / "active_learning" / "utils_yolo.py",
              ROOT / "active_learning" / "main_yolo.py",
              ROOT / "active_learning" / "run_al_from_aas.py",
              ROOT / "active_learning" / "harvest_from_inference.py",
              ROOT / "continual_learning" / "main_cl.py",
              ROOT / "continual_learning" / "cl_src" / "cl_orchestrator.py",
-             ROOT / "continual_learning" / "cl_src" / "data_utils.py"]
+             ROOT / "continual_learning" / "cl_src" / "data_utils.py",
+             ROOT / "aas_passport.py"]
     r = subprocess.run([str(TRAIN_PYTHON), "-m", "py_compile"] + [str(f) for f in files],
                        capture_output=True, text=True)
     assert r.returncode == 0, r.stderr.strip()
@@ -182,6 +184,233 @@ print("CONVERTER_OK")
     finally:
         shutil.rmtree(tmp, ignore_errors=True)
     return "occlusion/truncation/degenerate all drop whole frames; clean frame kept"
+
+
+def t_convert_no_data_returns_tuple():
+    """run_yolo_conversion must return a 2-tuple even when generation produced no
+    frames — otherwise `dir, stats = run_yolo_conversion(...)` crashes with a
+    confusing TypeError instead of reporting the empty render."""
+    code = r'''
+import sys, tempfile
+from pathlib import Path
+from types import SimpleNamespace
+sys.path.insert(0, r"{src}")
+import yolo_converter
+tmp = Path(tempfile.mkdtemp())
+(tmp / "src").mkdir()      # no rgb/bounding_box_2d_tight inside -> no data folders
+cfg = SimpleNamespace(YOLO_CONVERSION=SimpleNamespace(output_dir_abs=tmp / "out", CLASS_NAMES=["A"]))
+res = yolo_converter.run_yolo_conversion(str(tmp / "src"), cfg, "Medium")
+assert isinstance(res, tuple) and len(res) == 2, "expected (dir, stats) tuple, got " + repr(res)
+assert res[1] is None, "stats should be None when nothing was converted"
+print("EMPTY_OK")
+'''
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c", code.format(src=SMARTSDG / "src")],
+                       capture_output=True, text=True)
+    assert "EMPTY_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    return "empty render -> run_yolo_conversion returns (dir, None), no TypeError"
+
+
+def t_overlap_collapse():
+    """Geometric-collapse filter: a small box nested in a big one (high
+    containment, LOW IoU) must drop the frame when the containment guard is on,
+    and must SURVIVE under the legacy IoU-only behaviour — proving the new
+    containment check is what catches it. Well-separated boxes always survive."""
+    code = r'''
+import sys
+from pathlib import Path
+sys.path.insert(0, r"{src}")
+from PIL import Image
+import yolo_converter as yc
+
+tmp = Path(r"{tmp}") / "camA"
+tmp.mkdir(parents=True, exist_ok=True)
+# frame A: box 4 (small, flat) ~90% inside box 1 -> containment 0.90, IoU 0.14
+nested = "1 0.305469 0.381250 0.110937 0.104167\n4 0.310156 0.382292 0.123438 0.014583\n"
+def write_a():
+    Image.new("RGB",(640,480)).save(tmp/"a.png"); (tmp/"a.txt").write_text(nested)
+# frame B: two well-separated boxes -> must always survive
+Image.new("RGB",(640,480)).save(tmp/"b.png")
+(tmp/"b.txt").write_text("0 0.1 0.1 0.05 0.05\n1 0.9 0.9 0.05 0.05\n")
+
+write_a()
+d = yc.filter_overlapping_boxes(Path(r"{tmp}"), iou_threshold=0.7, containment_threshold=0.75)
+assert d == 1, "containment guard should delete 1 frame, got " + str(d)
+assert not (tmp/"a.png").exists(), "nested-box frame should be deleted"
+assert (tmp/"b.png").exists(), "separated-box frame must survive"
+
+write_a()
+d2 = yc.filter_overlapping_boxes(Path(r"{tmp}"), iou_threshold=0.7, containment_threshold=None)
+assert d2 == 0, "IoU-only (legacy) must NOT catch the nested case, deleted " + str(d2)
+assert (tmp/"a.png").exists(), "nested frame should survive IoU-only filter"
+print("COLLAPSE_OK")
+'''
+    tmp = tempfile.mkdtemp(prefix="sdgtest_collapse_")
+    try:
+        r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c",
+                            code.format(src=SMARTSDG / "src", tmp=tmp)],
+                           capture_output=True, text=True)
+        assert "COLLAPSE_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return "containment 0.90/IoU 0.14 nested box drops frame; IoU-only misses it; separated boxes kept"
+
+
+def t_passport_roundtrip():
+    """aas_passport.Passport: create a passport from the template, write per-stage
+    config + measurements + an append-only run, reload, and verify everything
+    persisted, the file is BOM-free, and it is still a valid IEC 63278 record."""
+    code = r'''
+import sys, os, json, tempfile
+from pathlib import Path
+os.environ.pop("SMARTSDG_SKIP_PASSPORT", None)   # ensure record_run is active in this test
+sys.path.insert(0, r"{root}")
+import aas_passport as ap
+
+tmp = Path(tempfile.mkdtemp())
+pp = ap.Passport.for_dataset("SELFTEST_DS", base_data_dir=r"X:\\d\\SELFTEST_DS",
+                             cameras=["Replicator"], datasets_dir=tmp)
+pp.write_config("SDG", {{"min_visibility": 0.95, "containment_threshold": 0.75}})
+pp.write_config("Training", {{"epochs": 50, "batch_size": 8}})
+pp.write_measurements("Training", {{"map50": 0.81}})
+pp.append_run({{"stage": "training", "status": "success"}})
+pp.save()
+
+pp2 = ap.Passport.from_file(pp.path)
+assert pp2.read_config("SDG")["containment_threshold"] == "0.75", pp2.read_config("SDG")
+assert pp2.read_config("Training")["epochs"] == "50", pp2.read_config("Training")
+sur = pp2.survey()
+assert sur["results"]["map50"] == "0.81", sur["results"]
+assert len(sur["runs"]) == 1 and sur["runs"][0]["stage"] == "training", sur["runs"]
+assert pp.path.read_bytes()[:3] != b"\xef\xbb\xbf", "passport has a BOM"
+from aas_core3 import jsonization
+jsonization.environment_from_jsonable(json.loads(pp.path.read_text(encoding="utf-8")))
+
+# record_run() — the one-call helper each stage's CLI uses (non-raising)
+rr = ap.record_run("RR_DS", "SDG", config={{"min_visibility": 0.95}},
+                   measurements={{"final_images": 12}}, run_label="SDG",
+                   base_data_dir=r"X:\\d\\RR_DS", datasets_dir=tmp)
+assert rr and Path(rr).exists(), "record_run did not create a passport"
+rr_pp = ap.Passport.from_file(rr)
+assert rr_pp.read_config("SDG")["min_visibility"] == "0.95", rr_pp.read_config("SDG")
+sur2 = rr_pp.survey()
+assert sur2["results"]["final_images"] == "12", sur2["results"]
+assert sur2["runs"][-1]["stage"] == "SDG", sur2["runs"]
+assert ap.record_run(None, "SDG") is None, "record_run must be a no-op on empty dataset name"
+os.environ["SMARTSDG_SKIP_PASSPORT"] = "1"
+assert ap.record_run("SKIP_DS", "SDG", config={{"x": 1}}, datasets_dir=tmp) is None, \
+    "SMARTSDG_SKIP_PASSPORT=1 must suppress record_run (dashboard handles it)"
+os.environ.pop("SMARTSDG_SKIP_PASSPORT", None)
+print("PASSPORT_OK")
+'''
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c", code.format(root=ROOT)],
+                       capture_output=True, text=True)
+    assert "PASSPORT_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    return "passport + record_run create->write config/measurements/run->reload; BOM-free; valid IEC 63278"
+
+
+def t_aas_sdg_config():
+    """AAS-as-config: SDG parameters can be read FROM an AAS, overriding config.yaml
+    with correct types, while config.yaml fills gaps. Pure parse — no Isaac/assets."""
+    code = r'''
+import sys, json, tempfile
+from pathlib import Path
+sys.path.insert(0, r"{src}")
+import config_process as cp
+
+data = json.loads(Path(r"{tmpl}").read_text(encoding="utf-8-sig"))
+cp._aas_find(data, "IOU_THRESHOLD")["value"] = "0.99"
+cp._aas_find(data, "focal_length")["value"] = "77.0"
+tmp = Path(tempfile.mkdtemp()) / "t.json"
+tmp.write_text(json.dumps(data), encoding="utf-8")
+
+ov = cp.aas_sdg_overrides(str(tmp))
+assert ov["YOLO_FILTERING"]["IOU_THRESHOLD"] == 0.99, ov.get("YOLO_FILTERING")
+assert isinstance(ov["YOLO_FILTERING"]["IOU_THRESHOLD"], float), "valueType not honoured"
+assert ov["generation_params"]["camera"]["focal_length"] == 77.0, ov["generation_params"]["camera"]
+assert "SIMULATION_CONFIG" in ov and "YOLO_CONVERSION" in ov, list(ov)
+
+# deep-merge: AAS wins, config.yaml keys survive
+base = {{"YOLO_FILTERING": {{"IOU_THRESHOLD": 0.7, "enabled": True}}, "keep": 1}}
+cp._deep_merge(base, {{"YOLO_FILTERING": {{"IOU_THRESHOLD": 0.99}}}})
+assert base["YOLO_FILTERING"]["IOU_THRESHOLD"] == 0.99
+assert base["YOLO_FILTERING"]["enabled"] is True and base["keep"] == 1
+print("AASCFG_OK")
+'''
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c",
+                        code.format(src=SMARTSDG / "src", tmpl=TEMPLATE_AAS)],
+                       capture_output=True, text=True)
+    assert "AASCFG_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    return "SDG config read from AAS (typed overrides) with config.yaml fallback"
+
+
+def t_v3_template_faithful():
+    """The v3.0 template (default) must be a faithful 1:1 source for SDG: reading
+    its SDG sections back equals config.yaml exactly, and the config.yaml->AAS
+    builder round-trips. This guards the 'AAS as single source' guarantee."""
+    code = r'''
+import sys, json, tempfile
+from pathlib import Path
+sys.path.insert(0, r"{src}")
+import yaml, config_process as cp
+
+raw = yaml.safe_load(Path(r"{cfg}").read_text(encoding="utf-8"))
+ov = cp.aas_sdg_overrides(r"{v3}")
+mism = [s for s in cp._AAS_SDG_SECTIONS if raw.get(s) != ov.get(s)]
+assert not mism, "v3.0 template != config.yaml for: " + str(mism)
+
+nodes = cp.sdg_config_to_aas_nodes(raw)
+tmp = Path(tempfile.mkdtemp()) / "x.json"
+tmp.write_text(json.dumps({{"value": nodes}}), encoding="utf-8")
+ov2 = cp.aas_sdg_overrides(str(tmp))
+mism2 = [s for s in cp._AAS_SDG_SECTIONS if raw.get(s) != ov2.get(s)]
+assert not mism2, "config.yaml->AAS builder round-trip != config.yaml for: " + str(mism2)
+print("V3_OK")
+'''
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c",
+                        code.format(src=SMARTSDG / "src", cfg=SDG_CONFIG, v3=TEMPLATE_AAS)],
+                       capture_output=True, text=True)
+    assert "V3_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    return "v3.0 template SDG config == config.yaml (full round-trip, all sections)"
+
+
+def t_console_progress():
+    """The dashboard log reader must collapse tqdm carriage-return refreshes into
+    a single live line (not one line per refresh), and treat CRLF cleanly."""
+    sys.path.insert(0, str(ROOT / "dashboard"))
+    import server
+    committed = []; st = {"cur": "", "live": "", "cr": False}
+    server._ingest_output("\rEpoch 1  50%\rEpoch 1 100%\nval done\n", committed, st)
+    assert committed == ["Epoch 1 100%", "val done"], committed
+    committed = []; st = {"cur": "", "live": "", "cr": False}
+    server._ingest_output("a\r\nb\r\n", committed, st)        # CRLF -> no blank lines
+    assert committed == ["a", "b"], committed
+    committed = []; st = {"cur": "", "live": "", "cr": False}
+    server._ingest_output("\rbar A\rbar B", committed, st)    # mid-bar -> live, not committed
+    assert st["live"] == "bar A" and committed == [], (st, committed)
+    return "tqdm \\r refreshes collapse to one committed line + a live line; CRLF clean"
+
+
+def t_label_cache_cleanup():
+    """trainer clears stale ultralytics label caches (sibling <dir>.cache and any
+    inside) so a Docker-built cache (/workspace paths) can't break a local run."""
+    code = r'''
+import sys, tempfile
+from pathlib import Path
+sys.path.insert(0, r"{od}")
+from src.train_eval.trainer_aas import _clear_stale_label_caches
+tmp = Path(tempfile.mkdtemp())
+d = tmp / "Replicator_01"; d.mkdir()
+sib = tmp / "Replicator_01.cache"; sib.write_text("x")
+inside = d / "labels.cache"; inside.write_text("x")
+_clear_stale_label_caches(str(d))
+assert not sib.exists(), "sibling cache not removed"
+assert not inside.exists(), "inside cache not removed"
+print("CACHE_OK")
+'''
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c", code.format(od=OD_DIR)],
+                       cwd=str(OD_DIR), capture_output=True, text=True)
+    assert "CACHE_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    return "stale label caches (sibling + inside) cleared before training"
 
 
 def t_exp_routing():
@@ -396,6 +625,12 @@ def main():
         check("AAS template vs class-ID registry", t_aas_template)
         check("python modules compile", t_compile)
         check("converter quality filters (synthetic)", t_converter_filters)
+        check("converter no-data returns tuple", t_convert_no_data_returns_tuple)
+        check("geometric-collapse overlap filter", t_overlap_collapse)
+        check("AAS passport module roundtrip", t_passport_roundtrip)
+        check("SDG config from AAS (+ fallback)", t_aas_sdg_config)
+        check("v3.0 template faithful to config.yaml", t_v3_template_faithful)
+        check("console progress single-line", t_console_progress)
         check("AAS files valid (IEC 63278)", t_aas_valid)
         _print_summary()
         return
@@ -410,6 +645,13 @@ def main():
     check("interpreters + dependencies", t_interpreters)
     check("python modules compile", t_compile)
     check("converter quality filters (synthetic)", t_converter_filters)
+    check("converter no-data returns tuple", t_convert_no_data_returns_tuple)
+    check("geometric-collapse overlap filter", t_overlap_collapse)
+    check("AAS passport module roundtrip", t_passport_roundtrip)
+    check("SDG config from AAS (+ fallback)", t_aas_sdg_config)
+    check("v3.0 template faithful to config.yaml", t_v3_template_faithful)
+    check("console progress single-line", t_console_progress)
+    check("stale label cache cleanup", t_label_cache_cleanup)
     check("exp-folder routing", t_exp_routing)
     check("AL strategies importable", t_al_strategies)
     check("AAS files valid (IEC 63278)", t_aas_valid)

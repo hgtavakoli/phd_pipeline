@@ -35,6 +35,27 @@ Each event is a SubmodelElementCollection of properties:
 This is the chronological, modular factory record: a higher-level system can read
 `Events` to reconstruct exactly what happened across all stages and sessions.
 
+## The passport API — `aas_passport.py`
+
+`aas_passport.py` (repo root, stdlib-only) is the single source of truth for the
+per-dataset record layout. Every pipeline stage uses it to read its own config
+from, and write its parameters + measurements into, the same dataset passport:
+
+```python
+from aas_passport import Passport
+pp = Passport.for_dataset("MULTI_Cabin-GlueGun_Medium_plane")  # open or clone-from-template
+cfg = pp.read_config("Training")                 # {"epochs": "50", "batch_size": "8", ...}
+# ... run the stage ...
+pp.write_measurements("Training", {"map50": 0.81})
+pp.append_run({"stage": "training", "status": "success"})   # append-only history
+pp.save()                                        # BOM-free write
+```
+
+Stages: `SDG` → `GenerationParameters`, `Training` → top-level properties (read by
+OD_training's `generate_config`), `AL` → `ActiveLearning`, `CL` →
+`ContinualLearning`. Cloning a passport strips template provenance, so a new
+record never inherits the template's residue (the template is a clean schema).
+
 ## How to consume from another module (example)
 
 ```python

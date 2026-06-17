@@ -109,8 +109,13 @@ def run_yolo_conversion(source_dir: str, config: AppConfig, light_mode: str, min
             dirnames.clear()
 
     if not data_folders_to_process:
-        print(f"? WARNING: No valid data folders found in '{root_dir}'.")
-        return dest_dir_final
+        print(f"!! WARNING: No rendered frames found in '{root_dir}'.")
+        print("   The SDG generation step produced no rgb/bounding_box_2d_tight output —")
+        print("   this is a generation problem, not a conversion one. Check the generation")
+        print("   log above for errors (e.g. component/USD load failures, 0 samples).")
+        # Return a 2-tuple so the caller's `dir, stats = run_yolo_conversion(...)`
+        # unpack does not crash; None stats signals 'nothing converted'.
+        return dest_dir_final, None
 
     print(f"? Found {len(data_folders_to_process)} data folder(s) to process.")
     isaac_to_yolo_map = {name.lower(): i for i, name in enumerate(class_names)}
@@ -268,17 +273,48 @@ def calculate_iou(box1, box2):
 
     return intersection_area / union_area if union_area > 0 else 0.0
 
-def filter_overlapping_boxes(yolo_dataset_path: Path, iou_threshold: float):
+def calculate_containment(box1, box2):
+    """Fraction of the SMALLER box that lies inside the other (intersection /
+    min area). Unlike IoU this stays high when a small box is nested inside a
+    big one (IoU is low there because the union is dominated by the big box),
+    so it catches the 'small object swallowed by a big object' collapse case."""
+    box1_x1, box1_y1 = box1[0] - box1[2] / 2, box1[1] - box1[3] / 2
+    box1_x2, box1_y2 = box1[0] + box1[2] / 2, box1[1] + box1[3] / 2
+    box2_x1, box2_y1 = box2[0] - box2[2] / 2, box2[1] - box2[3] / 2
+    box2_x2, box2_y2 = box2[0] + box2[2] / 2, box2[1] + box2[3] / 2
+
+    x_left, y_top = max(box1_x1, box2_x1), max(box1_y1, box2_y1)
+    x_right, y_bottom = min(box1_x2, box2_x2), min(box1_y2, box2_y2)
+
+    if x_right <= x_left or y_bottom <= y_top:
+        return 0.0
+
+    intersection_area = (x_right - x_left) * (y_bottom - y_top)
+    min_area = min(box1[2] * box1[3], box2[2] * box2[3])
+    return intersection_area / min_area if min_area > 0 else 0.0
+
+def filter_overlapping_boxes(yolo_dataset_path: Path, iou_threshold: float,
+                             containment_threshold: float = None):
     """
-    Scans a directory for images and labels, and removes pairs where bounding
-    boxes overlap by a given threshold.
+    Whole-frame geometric-collapse filter. Scans images+labels and DELETES the
+    image/label pair whenever any pair of boxes collapses geometrically:
+      - IoU >= iou_threshold              : the two boxes nearly coincide, OR
+      - containment >= containment_threshold : one box is mostly inside another
+        (intersection / smaller-box area). Catches a small box nested in a big
+        one, which IoU misses (low IoU, high containment).
+
+    Pass containment_threshold=None to keep the legacy IoU-only behaviour.
+    Depth is intentionally ignored — a heavy geometric overlap is dropped
+    regardless of which object is in front (visibility-based occlusion is
+    handled earlier in run_yolo_conversion).
     """
     print("\n" + "="*60)
     print("?? STARTING OVERLAP FILTERING PROCESS")
     print(f"  > Target Directory: {yolo_dataset_path}")
     print(f"  > IoU Threshold: {iou_threshold}")
+    print(f"  > Containment Threshold: {containment_threshold if containment_threshold is not None else 'disabled'}")
     print("="*60)
-    
+
     image_extensions = ('.png', '.jpg', '.jpeg')
     deleted_count = 0
 
@@ -300,21 +336,27 @@ def filter_overlapping_boxes(yolo_dataset_path: Path, iou_threshold: float):
                         continue
 
                     bboxes = [[float(p) for p in line.strip().split()[1:]] for line in lines if len(line.strip().split()) == 5]
-                    
+
                     should_delete = False
                     for i in range(len(bboxes)):
                         for j in range(i + 1, len(bboxes)):
                             iou = calculate_iou(bboxes[i], bboxes[j])
+                            containment = (calculate_containment(bboxes[i], bboxes[j])
+                                           if containment_threshold is not None else 0.0)
                             if iou >= iou_threshold:
-                                print(f"  - Deleting pair due to overlap >= {iou_threshold*100}% (IoU: {iou:.2f}) in {label_path.name}")
+                                print(f"  - Deleting frame (IoU {iou:.2f} >= {iou_threshold}) in {label_path.name}")
+                                should_delete = True
+                            elif containment_threshold is not None and containment >= containment_threshold:
+                                print(f"  - Deleting frame (containment {containment:.2f} >= {containment_threshold}) in {label_path.name}")
+                                should_delete = True
+                            if should_delete:
                                 os.remove(image_path)
                                 os.remove(label_path)
                                 deleted_count += 1
-                                should_delete = True
                                 break
                         if should_delete:
                             break
-                            
+
     print("\n" + "=" * 60)
     if deleted_count > 0:
         print(f"? Filtering Complete! Total files deleted: {deleted_count * 2} ({deleted_count} pairs)")

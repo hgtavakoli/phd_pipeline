@@ -4,6 +4,7 @@ import argparse
 import yaml
 import os
 import re
+import sys
 from pathlib import Path
 
 from src.aas_od_config_converter import generate_config
@@ -118,11 +119,41 @@ def main(args):
         print(f"INFO: Final configuration paths generated and saved for this run.")
 
     # --- 5. Run the Requested Mode ---
+    config['training']['cos_lr'] = args.cos_lr
+    if args.patience is not None:
+        config['training']['patience'] = args.patience
     mode = args.mode
     if mode == 'train':
         if distributed_utils.is_master_process():
             print("🚀 Starting Training Pipeline...")
         trainer.run_training_pipeline(config)
+        # PASSPORT: self-document this CLI training run into the dataset AAS.
+        if distributed_utils.is_master_process():
+            try:
+                repo_root = Path(__file__).resolve().parent.parent
+                if str(repo_root) not in sys.path:
+                    sys.path.insert(0, str(repo_root))
+                from aas_passport import record_run
+                ds_name = Path(base_data_path.replace('\\', '/').rstrip('/')).name
+                train_cfg = {k: config.get(k) for k in
+                             ("epochs", "batch_size", "img_size", "weights", "cameras_to_train")
+                             if isinstance(config, dict) and config.get(k) is not None}
+                meas = {}
+                cands = list(Path(config['paths']['yolo_project_dir']).rglob('results.csv'))
+                if cands:
+                    import csv
+                    rows = list(csv.DictReader(open(max(cands, key=lambda f: f.stat().st_mtime))))
+                    if rows:
+                        d = {k.strip(): v for k, v in rows[-1].items()}
+                        for src, dst in (("metrics/mAP50(B)", "map50"),
+                                         ("metrics/mAP50-95(B)", "map50_95")):
+                            if d.get(src) not in (None, ""):
+                                meas[dst] = round(float(d[src]), 4)
+                p = record_run(ds_name, "Training", config=train_cfg, measurements=meas,
+                               run_label="training", base_data_dir=base_data_path)
+                print(f"--- AAS passport updated: {p} ---" if p else "--- AAS passport update skipped ---")
+            except Exception as _e:
+                print(f"--- AAS passport update skipped: {_e} ---")
     elif mode == 'evaluate':
         if distributed_utils.is_master_process():
             print("📊 Starting Evaluation Pipeline...")
@@ -142,6 +173,10 @@ if __name__ == '__main__':
                         help='Path to save/read the generated YAML configuration file.')
     parser.add_argument('--mode', type=str, required=True, choices=['train', 'evaluate'],
                         help='Run mode: train or evaluate.')
+    parser.add_argument('--patience', type=int, default=None,
+                        help='Early-stopping patience in epochs (default: Ultralytics default 100). Set 0 to disable.')
+    parser.add_argument('--cos_lr', action='store_true', default=False,
+                        help='Use cosine learning-rate schedule instead of linear.')
 
     cli_args = parser.parse_args()
 

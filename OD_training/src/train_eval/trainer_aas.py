@@ -9,6 +9,30 @@ import torch.distributed as dist
 from ..common import logging_utils, distributed_utils
 
 
+def _clear_stale_label_caches(*paths):
+    """Delete ultralytics label .cache files for the given data dirs.
+
+    The cache stores ABSOLUTE image paths, so a cache written under Docker
+    (/workspace/...) — or on another machine — makes a local run fail to find the
+    images ('no labels in cache') even though the images+labels are right there.
+    Rebuilding the cache is cheap; clearing stale ones is the robust fix for
+    switching between Docker and native runs on the same dataset folder."""
+    for p in paths:
+        if not p:
+            continue
+        p = Path(p)
+        candidates = [p.with_suffix('.cache')]          # ultralytics: <imgdir>.cache (sibling)
+        if p.is_dir():
+            candidates += list(p.glob('*.cache'))
+        for c in candidates:
+            try:
+                if c.is_file():
+                    c.unlink()
+                    print(f"  - cleared stale label cache: {c}")
+            except Exception:
+                pass
+
+
 def run_periodic_evaluation(weights_path, epoch, config, yolo_experiment_run_name, custom_log_dir, class_names):
     """
     Runs an evaluation cycle on the TEST SET for a given checkpoint and logs results.
@@ -54,7 +78,7 @@ def run_periodic_evaluation(weights_path, epoch, config, yolo_experiment_run_nam
             imgsz=config['evaluation']['img_size'],
             batch=config['evaluation']['batch_size'],
             project=yolo_output_dir,
-            name=f"{yolo_experiment_run_name}_eval_epoch_{epoch}",
+            name=f"eval_epoch_{epoch}",
             save_json=True
         )
 
@@ -165,17 +189,27 @@ def run_training_pipeline(config):
                         epoch=trainer.epoch,
                         config=config,
                         yolo_experiment_run_name=yolo_experiment_run_name,
-                        custom_log_dir=os.path.join(custom_log_dir, yolo_experiment_run_name),
+                        custom_log_dir=os.path.join(custom_log_dir, camera_segment),
                         class_names=class_names
                     )
 
             model.add_callback("on_model_save", on_model_save_callback)
 
+            # Drop any label cache left by a different environment (Docker stores
+            # /workspace/... paths) so ultralytics rescans against the real local
+            # paths instead of failing to find the images.
+            if distributed_utils.is_master_process():
+                _clear_stale_label_caches(current_train_data_path, val_data_path,
+                                          paths_config.get('test_data_path'))
+
             # **FIX**: The 'rank' argument is removed. Ultralytics handles it automatically.
             model.train(
                 data=tmp_yaml_path,
                 project=yolo_project_dir,
-                name=yolo_experiment_run_name,
+                # Run subfolder = camera only; the project dir already carries the
+                # (long) dataset name. Repeating it overflowed Windows MAX_PATH
+                # (WinError 206) for multi-class dataset names.
+                name=camera_segment,
                 epochs=training_config['epochs'],
                 imgsz=training_config['img_size'],
                 batch=training_config['batch_size'],

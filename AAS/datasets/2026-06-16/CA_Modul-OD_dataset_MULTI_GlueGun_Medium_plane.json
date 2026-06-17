@@ -56362,52 +56362,29 @@
      ],
      "value": [
       {
-       "category": "PARAMETER",
        "idShort": "paths",
-       "description": [
-        {
-         "language": "en",
-         "text": "paths for SDG pipeline"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
-         "category": "PARAMETER",
          "idShort": "base",
          "valueType": "xs:string",
          "value": "assets",
          "modelType": "Property"
         },
         {
-         "category": "PARAMETER",
          "idShort": "output_raw",
          "valueType": "xs:string",
          "value": "Datasets/unified_render_output/",
          "modelType": "Property"
         },
         {
-         "category": "PARAMETER",
          "idShort": "env_usd_rel",
-         "description": [
-          {
-           "language": "en",
-           "text": "env_usd_relative"
-          }
-         ],
          "valueType": "xs:string",
          "value": "env/SF_model/SDG_SF_Fixed_model_v5.usd",
          "modelType": "Property"
         },
         {
-         "category": "PARAMETER",
          "idShort": "flat_env_usd_rel",
-         "description": [
-          {
-           "language": "en",
-           "text": "flat_env_usd_relative"
-          }
-         ],
          "valueType": "xs:string",
          "value": "env/SF_model/flattened_saved.usd",
          "modelType": "Property"
@@ -56418,30 +56395,15 @@
          "value": "Incorap_lkw",
          "modelType": "Property"
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
       },
       {
-       "category": "PARAMETER",
        "idShort": "generation_params",
-       "description": [
-        {
-         "language": "en",
-         "text": "The parameters to generate synthetic data"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
-         "category": "PARAMETER",
          "idShort": "scene",
-         "description": [
-          {
-           "language": "en",
-           "text": "Parameters for the scene and scale of the component"
-          }
-         ],
-         "typeValueListElement": "SubmodelElement",
+         "modelType": "SubmodelElementCollection",
          "value": [
           {
            "idShort": "center_x",
@@ -56456,42 +56418,27 @@
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "truck_z_position",
-           "displayName": [
-            {
-             "language": "en",
-             "text": "Z position of the component like truck as the target classes"
-            }
-           ],
            "valueType": "xs:float",
            "value": "0.95",
            "modelType": "Property"
           },
           {
-           "category": "CONSTANT",
            "idShort": "truck_scale",
            "valueType": "xs:float",
            "value": "0.01",
            "modelType": "Property"
           }
-         ],
-         "modelType": "SubmodelElementList"
+         ]
         },
         {
          "idShort": "spawning",
-         "description": [
-          {
-           "language": "en",
-           "text": "Contain the spawn radius and z variation"
-          }
-         ],
-         "typeValueListElement": "SubmodelElement",
+         "modelType": "SubmodelElementCollection",
          "value": [
           {
            "idShort": "multi_spawn_radius",
            "valueType": "xs:float",
-           "value": "0.3",
+           "value": "0.2",
            "modelType": "Property"
           },
           {
@@ -56500,547 +56447,272 @@
            "value": "0.3",
            "modelType": "Property"
           }
-         ],
-         "modelType": "SubmodelElementList"
+         ]
         },
         {
-         "category": "PARAMETER",
          "idShort": "camera",
-         "description": [
-          {
-           "language": "en",
-           "text": "Camera parameters"
-          }
-         ],
-         "typeValueListElement": "SubmodelElement",
+         "modelType": "SubmodelElementCollection",
          "value": [
           {
            "idShort": "img_width",
-           "description": [
-            {
-             "language": "en",
-             "text": "Image width "
-            }
-           ],
            "valueType": "xs:integer",
            "value": "128",
            "modelType": "Property"
           },
           {
-           "category": "CONSTANT",
            "idShort": "img_height",
-           "description": [
-            {
-             "language": "en",
-             "text": "Image Height"
-            }
-           ],
            "valueType": "xs:integer",
            "value": "80",
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "focal_length",
            "valueType": "xs:float",
            "value": "48.0",
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "focus_distance",
            "valueType": "xs:float",
            "value": "400.0",
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "f_stop",
            "valueType": "xs:float",
            "value": "0.0",
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "orbit_radius",
            "valueType": "xs:float",
            "value": "1.5",
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "orbit_height",
            "valueType": "xs:float",
            "value": "1.0",
            "modelType": "Property"
           },
           {
-           "category": "PARAMETER",
            "idShort": "orbit_height_isolated",
            "valueType": "xs:float",
            "value": "0.85",
            "modelType": "Property"
           }
-         ],
-         "modelType": "SubmodelElementList"
+         ]
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
       },
       {
-       "category": "PARAMETER",
        "idShort": "COMPONENT_USD_MAP",
-       "description": [
-        {
-         "language": "en",
-         "text": "The USD dictionary contains the key for the class naming"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
          "idShort": "Ylid",
          "valueType": "xs:string",
-         "value": "",
-         "valueId": {
-          "type": "ModelReference",
-          "keys": [
-           {
-            "type": "Property",
-            "value": "YellowkLid.usd"
-           }
-          ]
-         },
+         "value": "YellowkLid.usd",
          "modelType": "Property"
         },
         {
          "idShort": "YTrailer",
          "valueType": "xs:string",
-         "valueId": {
-          "type": "ModelReference",
-          "keys": [
-           {
-            "type": "Property",
-            "value": "YellowTrailer.usd"
-           }
-          ]
-         },
+         "value": "YellowTrailer.usd",
          "modelType": "Property"
         },
         {
          "idShort": "Cabin",
          "valueType": "xs:string",
-         "valueId": {
-          "type": "ModelReference",
-          "keys": [
-           {
-            "type": "Property",
-            "value": "Cabin.usd"
-           }
-          ]
-         },
+         "value": "Cabin.usd",
          "modelType": "Property"
         },
         {
          "idShort": "GlueGun",
          "valueType": "xs:string",
-         "valueId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "GlueGun_new.usd"
-           }
-          ]
-         },
+         "value": "GlueGun_new.usd",
          "modelType": "Property"
         },
         {
          "idShort": "BLid",
          "valueType": "xs:string",
-         "value": "",
-         "valueId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Bluelid.usd"
-           }
-          ]
-         },
+         "value": "Bluelid.usd",
          "modelType": "Property"
         },
         {
          "idShort": "BTrailer",
          "valueType": "xs:string",
-         "valueId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "BlueTrailer.usd"
-           }
-          ]
-         },
+         "value": "BlueTrailer.usd",
          "modelType": "Property"
         },
         {
          "idShort": "FChassis",
          "valueType": "xs:string",
-         "valueId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Fchassis.usd"
-           }
-          ]
-         },
+         "value": "Fchassis.usd",
          "modelType": "Property"
         },
         {
          "idShort": "Rchassis",
          "valueType": "xs:string",
-         "valueId": {
-          "type": "ExternalReference",
-          "keys": [
-           {
-            "type": "GlobalReference",
-            "value": "Rchassis.usd"
-           }
-          ]
-         },
+         "value": "Rchassis.usd",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "BlackCabin",
+         "valueType": "xs:string",
+         "value": "BlackCabin.usd",
          "modelType": "Property"
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
       },
       {
-       "category": "PARAMETER",
        "idShort": "YOLO_CONVERSION",
-       "description": [
-        {
-         "language": "en",
-         "text": "The ooutput directory for yolo labled dataset"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
-         "category": "PARAMETER",
          "idShort": "OUTPUT_DIR_BASE",
-         "description": [
-          {
-           "language": "en",
-           "text": "The output of the YOLO labled generated dataset"
-          }
-         ],
          "valueType": "xs:string",
          "value": "Datasets/yolo_experiments",
          "modelType": "Property"
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
       },
       {
-       "category": "PARAMETER",
        "idShort": "YOLO_FILTERING",
-       "description": [
-        {
-         "language": "en",
-         "text": "YOLO Filtering Settings"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
-         "category": "PARAMETER",
          "idShort": "enabled",
-         "description": [
-          {
-           "language": "en",
-           "text": "Set 'enabled' to true to run the filter, false to skip it"
-          }
-         ],
          "valueType": "xs:boolean",
          "value": "true",
          "modelType": "Property"
         },
         {
-         "category": "PARAMETER",
          "idShort": "IOU_THRESHOLD",
-         "description": [
-          {
-           "language": "en",
-           "text": "Define the IoU threshold for deleting overlapping boxes"
-          }
-         ],
          "valueType": "xs:float",
-         "value": "0.5",
+         "value": "0.7",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "CONTAINMENT_THRESHOLD",
+         "valueType": "xs:float",
+         "value": "0.75",
          "modelType": "Property"
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
       },
       {
-       "category": "CONSTANT",
        "idShort": "LIGHT_INTENSITY_MAP",
-       "description": [
-        {
-         "language": "en",
-         "text": "the environment light intensity for SmartSDG pipeline"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
-         "category": "CONSTANT",
          "idShort": "Low",
-         "description": [
-          {
-           "language": "en",
-           "text": "low intensity of the light"
-          }
-         ],
-         "valueType": "xs:integer",
-         "value": "500, 5000",
+         "valueType": "xs:string",
+         "value": "[5000, 500]",
          "modelType": "Property"
         },
         {
-         "category": "CONSTANT",
          "idShort": "Medium",
-         "description": [
-          {
-           "language": "en",
-           "text": "Medium intensity of the light"
-          }
-         ],
-         "valueType": "xs:integer",
-         "value": "5000, 20000",
+         "valueType": "xs:string",
+         "value": "[20000, 5000]",
          "modelType": "Property"
         },
         {
-         "category": "CONSTANT",
          "idShort": "High",
-         "description": [
-          {
-           "language": "en",
-           "text": "High intensity of the light"
-          }
-         ],
-         "valueType": "xs:integer",
-         "value": "20000, 80000",
+         "valueType": "xs:string",
+         "value": "[80000, 20000]",
          "modelType": "Property"
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
       },
       {
-       "category": "CONSTANT",
-       "idShort": "LIGHT_TEMPERATURE",
-       "typeValueListElement": "SubmodelElement",
-       "value": [
-        {
-         "idShort": "Mean",
-         "description": [
-          {
-           "language": "en",
-           "text": "Mean of the temp"
-          }
-         ],
-         "valueType": "xs:int",
-         "value": "8000",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "Std",
-         "description": [
-          {
-           "language": "en",
-           "text": "standard daviation"
-          }
-         ],
-         "valueType": "xs:int",
-         "value": "500",
-         "modelType": "Property"
-        }
-       ],
-       "modelType": "SubmodelElementList"
+       "idShort": "LIGHT_TEMPERATURE_MEAN",
+       "valueType": "xs:integer",
+       "value": "8000",
+       "modelType": "Property"
       },
       {
-       "category": "CONSTANT",
+       "idShort": "LIGHT_TEMPERATURE_STD",
+       "valueType": "xs:integer",
+       "value": "500",
+       "modelType": "Property"
+      },
+      {
        "idShort": "LIGHT_POSITIONS",
-       "description": [
-        {
-         "language": "en",
-         "text": "The position of the ceiling light in the virtual environment"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
-       "value": [
-        {
-         "category": "CONSTANT",
-         "idShort": "pos00",
-         "valueType": "xs:string",
-         "value": "[-1, 18.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos01",
-         "valueType": "xs:string",
-         "value": "[-1, 20.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos02",
-         "valueType": "xs:string",
-         "value": "[-1, 22.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos03",
-         "valueType": "xs:string",
-         "value": "[-1, 24.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos04",
-         "valueType": "xs:string",
-         "value": "[-7, 18.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos05",
-         "valueType": "xs:string",
-         "value": "[-7, 20.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos06",
-         "valueType": "xs:string",
-         "value": "[-7, 22.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos07",
-         "valueType": "xs:string",
-         "value": "[-7, 24.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos08",
-         "valueType": "xs:string",
-         "value": "[-5, 18.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos09",
-         "valueType": "xs:string",
-         "value": "[-5, 20.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos10",
-         "valueType": "xs:string",
-         "value": "[-5, 22.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos11",
-         "valueType": "xs:string",
-         "value": "[-5, 24.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos12",
-         "valueType": "xs:string",
-         "value": "[-3, 18.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos13",
-         "valueType": "xs:string",
-         "value": "[-3, 20.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos14",
-         "valueType": "xs:string",
-         "value": "[-3, 22.62, 3.95]",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "pos15",
-         "valueType": "xs:string",
-         "value": "[-3, 24.62, 3.95]",
-         "modelType": "Property"
-        }
-       ],
-       "modelType": "SubmodelElementList"
+       "valueType": "xs:string",
+       "value": "[[-1, 18.62, 3.95], [-1, 20.62, 3.95], [-1, 22.62, 3.95], [-1, 24.62, 3.95], [-7, 18.62, 3.95], [-7, 20.62, 3.95], [-7, 22.62, 3.95], [-7, 24.62, 3.95], [-5, 18.62, 3.95], [-5, 20.62, 3.95], [-5, 22.62, 3.95], [-5, 24.62, 3.95], [-3, 18.62, 3.95], [-3, 20.62, 3.95], [-3, 22.62, 3.95], [-3, 24.62, 3.95]]",
+       "modelType": "Property"
       },
       {
-       "category": "PARAMETER",
        "idShort": "SIMULATION_CONFIG",
-       "description": [
-        {
-         "language": "en",
-         "text": "Simulation Backend Configuration"
-        }
-       ],
-       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementCollection",
        "value": [
         {
-         "category": "PARAMETER",
          "idShort": "headless",
-         "description": [
-          {
-           "language": "en",
-           "text": "Wether with GUI or headless running the Isaac Sim"
-          }
-         ],
          "valueType": "xs:boolean",
-         "value": "True",
+         "value": "true",
          "modelType": "Property"
         },
         {
          "idShort": "renderer",
-         "description": [
-          {
-           "language": "en",
-           "text": "e.g. \"PathTracing\""
-          }
-         ],
          "valueType": "xs:string",
          "value": "PathTracing",
          "modelType": "Property"
         },
         {
-         "category": "PARAMETER",
          "idShort": "samples_per_pixel_per_frame",
-         "valueType": "xs:int",
-         "value": "32",
+         "valueType": "xs:integer",
+         "value": "8",
          "modelType": "Property"
         },
         {
          "idShort": "max_bounces",
-         "valueType": "xs:int",
+         "valueType": "xs:integer",
          "value": "32",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "max_specular_transmission_bounces",
+         "valueType": "xs:integer",
+         "value": "6",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "max_volume_bounces",
+         "valueType": "xs:integer",
+         "value": "4",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "subdiv_refinement_level",
+         "valueType": "xs:integer",
+         "value": "0",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "anti_aliasing",
+         "valueType": "xs:integer",
+         "value": "3",
          "modelType": "Property"
         },
         {
          "idShort": "denoiser",
          "valueType": "xs:boolean",
-         "value": "True",
+         "value": "true",
          "modelType": "Property"
         },
         {
          "idShort": "use_denoiser",
          "valueType": "xs:boolean",
-         "value": "True",
+         "value": "true",
          "modelType": "Property"
         }
-       ],
-       "modelType": "SubmodelElementList"
+       ]
+      },
+      {
+       "idShort": "RTX_CARB_SETTINGS",
+       "modelType": "SubmodelElementCollection",
+       "value": []
       }
      ],
      "modelType": "SubmodelElementCollection"
@@ -57131,7 +56803,7 @@
         {
          "idShort": "cameras_to_train",
          "valueType": "xs:string",
-         "value": "Replicator",
+         "value": "Replicator, Replicator_01",
          "modelType": "Property"
         },
         {
@@ -57143,7 +56815,7 @@
         {
          "idShort": "epochs",
          "valueType": "xs:string",
-         "value": "10",
+         "value": "1",
          "modelType": "Property"
         },
         {
@@ -57155,13 +56827,13 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "4",
+         "value": "8",
          "modelType": "Property"
         },
         {
          "idShort": "save_period",
          "valueType": "xs:string",
-         "value": "-1",
+         "value": "10",
          "modelType": "Property"
         }
        ],
@@ -57180,7 +56852,7 @@
         {
          "idShort": "batch_size",
          "valueType": "xs:string",
-         "value": "4",
+         "value": "8",
          "modelType": "Property"
         },
         {
@@ -57212,953 +56884,6 @@
      "idShort": "ODOptimisation",
      "modelType": "SubmodelElementCollection",
      "value": [
-      {
-       "idShort": "ActiveLearning",
-       "typeValueListElement": "SubmodelElement",
-       "value": [
-        {
-         "idShort": "Paths",
-         "typeValueListElement": "SubmodelElement",
-         "value": [
-          {
-           "idShort": "data_dir",
-           "valueType": "xs:string",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "output_dir",
-           "valueType": "xs:string",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "initial_model_path",
-           "valueType": "xs:string",
-           "modelType": "Property"
-          }
-         ],
-         "modelType": "SubmodelElementList"
-        },
-        {
-         "idShort": "TrainingParameters",
-         "typeValueListElement": "SubmodelElement",
-         "value": [
-          {
-           "idShort": "epochs_per_round",
-           "valueType": "xs:integer",
-           "value": "50",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "batch_size",
-           "valueType": "xs:integer",
-           "value": "4",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "img_size",
-           "valueType": "xs:integer",
-           "value": "640",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "learning_rate",
-           "valueType": "xs:float",
-           "value": "0.01",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "weight_decay",
-           "valueType": "xs:double",
-           "value": "0.0005",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "optimizer",
-           "valueType": "xs:string",
-           "value": "auto",
-           "modelType": "Property"
-          }
-         ],
-         "modelType": "SubmodelElementList"
-        },
-        {
-         "idShort": "ActiveLearningSettings",
-         "typeValueListElement": "SubmodelElement",
-         "value": [
-          {
-           "idShort": "al_rounds",
-           "valueType": "xs:integer",
-           "value": "5",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "initial_subset_size",
-           "valueType": "xs:integer",
-           "value": "100",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "add_per_round",
-           "valueType": "xs:integer",
-           "value": "50",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "ud_split",
-           "valueType": "xs:float",
-           "value": "0.5",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "al_score_threshold",
-           "valueType": "xs:float",
-           "value": "0.10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "al_strategy",
-           "valueType": "xs:string",
-           "value": "ppal_feat",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "al_class_balance",
-           "valueType": "xs:boolean",
-           "value": "true",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "img_extension",
-           "valueType": "xs:string",
-           "value": ".png",
-           "modelType": "Property"
-          }
-         ],
-         "modelType": "SubmodelElementList"
-        },
-        {
-         "idShort": "DatasetInfo",
-         "typeValueListElement": "SubmodelElement",
-         "value": [
-          {
-           "idShort": "num_classes",
-           "valueType": "xs:integer",
-           "value": "8",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "dataset_yaml",
-           "valueType": "xs:string",
-           "value": "./data/full-data/dataset.yaml",
-           "modelType": "Property"
-          }
-         ],
-         "modelType": "SubmodelElementList"
-        }
-       ],
-       "modelType": "SubmodelElementList"
-      },
-      {
-       "idShort": "ContinualLearning",
-       "typeValueListElement": "SubmodelElement",
-       "modelType": "SubmodelElementList",
-       "value": [
-        {
-         "idShort": "cl_strategy",
-         "valueType": "xs:string",
-         "value": "replay",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "input_model",
-         "valueType": "xs:string",
-         "value": "",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "current_classes",
-         "valueType": "xs:string",
-         "value": "Ylid, YTrailer, Cabin, GlueGun, BLid, BTrailer, FChassis, Rchassis, BlackCabin",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "new_classes",
-         "valueType": "xs:string",
-         "value": "",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "new_data_dir",
-         "valueType": "xs:string",
-         "value": "",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "replay_data_dir",
-         "valueType": "xs:string",
-         "value": "",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "val_new_data_dir",
-         "valueType": "xs:string",
-         "value": "",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "val_replay_data_dir",
-         "valueType": "xs:string",
-         "value": "",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "replay_ratio",
-         "valueType": "xs:float",
-         "value": "0.3",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "epochs",
-         "valueType": "xs:integer",
-         "value": "10",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "batch_size",
-         "valueType": "xs:integer",
-         "value": "4",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "img_size",
-         "valueType": "xs:integer",
-         "value": "640",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "output_dir",
-         "valueType": "xs:string",
-         "value": "./results/cl_runs",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "exp_name",
-         "valueType": "xs:string",
-         "value": "cl_step",
-         "modelType": "Property"
-        }
-       ]
-      },
-      {
-       "idShort": "RunHistory",
-       "typeValueListElement": "SubmodelElement",
-       "modelType": "SubmodelElementList",
-       "value": [
-        {
-         "idShort": "run_20260616T123950",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(127)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T12:39:50",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "0",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T124206",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(125)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T12:42:06",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "1",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T125540",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T12:55:40",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "4",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50_95",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "epochs",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "model_path",
-           "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T144350",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(125)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T14:43:50",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "0",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T145352",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(125)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T14:53:52",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "0",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T145623",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(125)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T14:56:23",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "1",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T150439",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(1)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:04:39",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "1",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T150847",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(1)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:08:47",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "5",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T151038",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "SDG",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:10:38",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "77",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "final_images",
-           "valueType": "xs:string",
-           "value": "185",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T151143",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(1)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:11:43",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "3",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T151459",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:14:59",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "3",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50_95",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "epochs",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "model_path",
-           "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T151829",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(1)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:18:29",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T152126",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:21:26",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "6",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50_95",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "epochs",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "model_path",
-           "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T153134",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:31:34",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "54",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50_95",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "epochs",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "model_path",
-           "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T153331",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:33:31",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "66",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50_95",
-           "valueType": "xs:string",
-           "value": "0.0",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "epochs",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "model_path",
-           "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\SINGLE_GlueGun_High_plane\\SINGLE_GlueGun_High_plane_Replicator\\weights\\best.pt",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T153929",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "success",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:39:29",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "184",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50",
-           "valueType": "xs:string",
-           "value": "0.0032",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "map50_95",
-           "valueType": "xs:string",
-           "value": "0.0007",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "epochs",
-           "valueType": "xs:string",
-           "value": "10",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "model_path",
-           "valueType": "xs:string",
-           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\MULTI_GlueGun_Medium_plane\\MULTI_GlueGun_Medium_plane_Replicator4\\weights\\best.pt",
-           "modelType": "Property"
-          }
-         ]
-        },
-        {
-         "idShort": "run_20260616T154519",
-         "modelType": "SubmodelElementCollection",
-         "value": [
-          {
-           "idShort": "stage",
-           "valueType": "xs:string",
-           "value": "training",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "status",
-           "valueType": "xs:string",
-           "value": "failed(1)",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "finished_at",
-           "valueType": "xs:string",
-           "value": "2026-06-16T15:45:19",
-           "modelType": "Property"
-          },
-          {
-           "idShort": "duration_s",
-           "valueType": "xs:string",
-           "value": "22",
-           "modelType": "Property"
-          }
-         ]
-        }
-       ]
-      },
-      {
-       "idShort": "Results",
-       "typeValueListElement": "SubmodelElement",
-       "modelType": "SubmodelElementList",
-       "value": [
-        {
-         "idShort": "stage",
-         "valueType": "xs:string",
-         "value": "training",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "updated_at",
-         "valueType": "xs:string",
-         "value": "2026-06-16T15:39:29",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "map50",
-         "valueType": "xs:string",
-         "value": "0.0032",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "map50_95",
-         "valueType": "xs:string",
-         "value": "0.0007",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "epochs",
-         "valueType": "xs:string",
-         "value": "10",
-         "modelType": "Property"
-        },
-        {
-         "idShort": "model_path",
-         "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp1\\MULTI_GlueGun_Medium_plane\\MULTI_GlueGun_Medium_plane_Replicator4\\weights\\best.pt",
-         "modelType": "Property"
-        }
-       ]
-      },
       {
        "idShort": "GenerationParameters",
        "typeValueListElement": "SubmodelElement",
@@ -58225,6 +56950,12 @@
          "modelType": "Property"
         },
         {
+         "idShort": "containment_threshold",
+         "valueType": "xs:string",
+         "value": "0.75",
+         "modelType": "Property"
+        },
+        {
          "idShort": "drop_truncated",
          "valueType": "xs:string",
          "value": "True",
@@ -58245,14 +56976,57 @@
         {
          "idShort": "generated_at",
          "valueType": "xs:string",
-         "value": "2026-06-16T15:10:38",
+         "value": "2026-06-17T17:41:51",
          "modelType": "Property"
         },
         {
          "idShort": "final_images",
          "valueType": "xs:string",
-         "value": "185",
+         "value": "187",
          "modelType": "Property"
+        }
+       ]
+      },
+      {
+       "idShort": "RunHistory",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "run_20260617T174151",
+         "modelType": "SubmodelElementCollection",
+         "value": [
+          {
+           "idShort": "stage",
+           "valueType": "xs:string",
+           "value": "SDG",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "status",
+           "valueType": "xs:string",
+           "value": "success",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "finished_at",
+           "valueType": "xs:string",
+           "value": "2026-06-17T17:41:51",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "duration_s",
+           "valueType": "xs:string",
+           "value": "68",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "final_images",
+           "valueType": "xs:string",
+           "value": "187",
+           "modelType": "Property"
+          }
+         ]
         }
        ]
       }

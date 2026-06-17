@@ -21,17 +21,21 @@ Stages: ① SDG (Isaac Sim) → ② OD Training (YOLOv12) → ③ Inference/harv
 
 ## Config layers (don't merge these — by design)
 - `pipeline.yaml` = cross-stage DEFAULTS the dashboard pre-fills (served live via /api/defaults).
-- `SmartSDG/src/config/config.yaml` = SDG params + `COMPONENT_USD_MAP` (the class registry; **append-only**, global IDs never reorder; Isaac reads it directly).
-- `AAS/datasets/<date>/CA_Modul-OD_dataset_<name>.json` = per-dataset record (config + outcomes), git-committed.
+- `SmartSDG/src/config/config.yaml` = SDG params + `COMPONENT_USD_MAP` (the class registry; **append-only**, global IDs never reorder; Isaac reads it directly). It is the fallback source and the canonical content of the v3.0 template.
+- **`AAS/CA_Modul-OD_pipeline_v3.0.json` = default template** and a **faithful 1:1 source** for SDG (generated from config.yaml, not hand-edited). SDG reads its config from an AAS via `SmartSDG/main.py --aas_file <aas>` → `config_process.aas_sdg_overrides()` (covers ALL SDG sections incl. registry + lights), with config.yaml filling any gaps (`_deep_merge`); the dashboard passes the SDG tab's picked AAS. Regenerate v3.0 faithfully with `config_process.sdg_config_to_aas_nodes(config.yaml)` → rebuild the `OD_Module/SmartSDG` collection. Fidelity is regression-tested (`aas_sdg_overrides(v3.0) == config.yaml`). v2.0 is legacy (kept on disk; its SDG sections drifted — don't use it as a config source).
+- `AAS/datasets/<date>/CA_Modul-OD_dataset_<name>.json` = per-dataset record ("passport": config + outcomes), git-committed.
 - `AAS/pipeline_history.json` = factory event log (git-ignored, rolling).
 - `pipeline_config.json` = per-machine paths (git-ignored).
+- `aas_passport.py` (repo root, stdlib-only) = **single source of truth for the AAS layout**. `Passport.for_dataset(name)` opens/creates a dataset passport; `read_config/write_config/write_measurements/append_run/save` let every stage read+write its slice of the same file. The dashboard imports its `_aas_*` helpers from here (don't redefine them). Cloning a passport strips template provenance — the template `CA_Modul-OD_pipeline_v2.0.json` is a clean read-only SCHEMA, never a record.
+- **CLI runs self-record**: each stage main (`SmartSDG/main.py`, `OD_training/main.py`, `active_learning/run_al_from_aas.py`, `continual_learning/main_cl.py`) calls `aas_passport.record_run(...)` (non-raising) at the tail of a successful run. The dashboard sets `SMARTSDG_SKIP_PASSPORT=1` on the subprocess so its own `record_to_aas` remains the single writer (no double entries). So: dashboard run → `record_to_aas`; bare CLI run → `record_run`.
 
 ## Hard invariants (do not break)
 - **AAS files must be BOM-free** (Isaac yaml + aas_core3 reject BOMs). Always write with UTF-8 no-BOM. PowerShell `Set-Content -Encoding utf8` adds a BOM — use `[IO.File]::WriteAllText(p, s, (New-Object Text.UTF8Encoding $false))` or the Write tool.
 - **Never keep an image with an unlabeled object** — occluded/truncated/degenerate objects discard the WHOLE frame (yolo_converter policies default "frame").
 - **Class registry append-only** — new components append to COMPONENT_USD_MAP at the end (next free ID); existing IDs never shift.
 - **Record mode**: dashboard writes run params + outcomes into the per-dataset AAS; every completion also appends to `pipeline_history.json`. Keep both.
-- Validated SDG defaults: 640×480, min_visibility 0.95, spawn 0.2, separation 0.05, IoU 0.7, drop_truncated, light Medium, env plane.
+- Validated SDG defaults: 640×480, min_visibility 0.95, spawn 0.2, separation 0.05, IoU 0.7, containment 0.75, drop_truncated, light Medium, env plane.
+- **Geometric collapse** — `filter_overlapping_boxes` drops a frame when any pair of label boxes collapses: IoU ≥ iou_threshold (boxes coincide) OR containment ≥ containment_threshold (intersection ÷ smaller-box area — a small box nested in a big one, which IoU misses). Depth-agnostic by design. Wired through config.yaml `YOLO_FILTERING.CONTAINMENT_THRESHOLD`, `--containment_threshold`, pipeline.yaml, and the dashboard.
 - Default model is **YOLOv12** (yolov12l.pt) everywhere user-facing.
 
 ## Stage specifics

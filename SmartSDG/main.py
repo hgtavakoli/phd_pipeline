@@ -63,7 +63,10 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     # --- Core run definition -------------------------------------------------
     parser.add_argument("--config", type=str, default=str(PROJECT_ROOT / "src/config/config.yaml"),
-                        help="Path to the YAML configuration file.")
+                        help="Path to the YAML configuration file (fallback when --aas_file is set).")
+    parser.add_argument("--aas_file", type=str, default=None,
+                        help="Optional AAS json. When given, SDG parameters are read FROM this\n"
+                             "AAS (the passport drives the run); config.yaml fills any gaps.")
     parser.add_argument("--light_mode", type=str, required=True, choices=["Low", "Medium", "High"],
                         help="Lighting intensity band (see LIGHT_INTENSITY_MAP in config.yaml).")
     parser.add_argument("--num_samples", type=int, default=10,
@@ -127,10 +130,16 @@ def build_arg_parser() -> argparse.ArgumentParser:
                         help="'frame' (default): discard the whole image when any object is border-cut.\n"
                              "'box': remove only the label — AVOID, leaves unlabeled pixels.")
     parser.add_argument("--filter_overlaps", action="store_true",
-                        help="Delete image/label pairs whose label boxes overlap >= --iou_threshold.")
+                        help="Delete image/label pairs whose boxes collapse geometrically\n"
+                             "(IoU >= --iou_threshold OR containment >= --containment_threshold).")
     parser.add_argument("--iou_threshold", type=float, default=None,
                         help="IoU threshold for --filter_overlaps. Default: YOLO_FILTERING.IOU_THRESHOLD\n"
                              "from config.yaml (0.7).")
+    parser.add_argument("--containment_threshold", type=float, default=None,
+                        help="Containment threshold (intersection / smaller-box area) for\n"
+                             "--filter_overlaps: drop a frame when a small box is this fraction\n"
+                             "inside a bigger one (IoU misses this). Default:\n"
+                             "YOLO_FILTERING.CONTAINMENT_THRESHOLD from config.yaml (0.75).")
     return parser
 
 
@@ -197,7 +206,8 @@ def validate_component_selection(args: argparse.Namespace, config) -> None:
         print(f"Mode: SINGLE-object ({args.component_class})")
 
 
-def print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_output_dir) -> None:
+def print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_output_dir,
+                        containment_threshold=None) -> None:
     """Account for every frame: rendered, kept, and each discard reason."""
     final_images = sum(1 for _ in Path(yolo_output_dir).rglob("*.png")) if yolo_output_dir else 0
     s = conv_stats
@@ -211,7 +221,8 @@ def print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_o
     print(f"  Frames discarded - degenerate (unlabelable) box : {s['frames_dropped_degenerate']}")
     print(f"  Frames discarded - no labels survived filters : {s['frames_skipped_empty']}")
     if overlap_deleted is not None:
-        print(f"  Frames deleted   - boxes overlapping IoU >= {iou_threshold} : {overlap_deleted}")
+        ct = f" or containment >= {containment_threshold}" if containment_threshold is not None else ""
+        print(f"  Frames deleted   - geometric collapse (IoU >= {iou_threshold}{ct}) : {overlap_deleted}")
     else:
         print(f"  Frames deleted   - overlap filter not enabled (--filter_overlaps)")
     print(f"  ------------------------------------------------------------")
@@ -224,7 +235,7 @@ def print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_o
 if __name__ == "__main__":
     args = build_arg_parser().parse_args()
 
-    config = load_and_process_config(args.config, PROJECT_ROOT)
+    config = load_and_process_config(args.config, PROJECT_ROOT, aas_path=args.aas_file)
     apply_cli_overrides(args, config)
     validate_component_selection(args, config)
 
@@ -247,6 +258,8 @@ if __name__ == "__main__":
         conv_stats = None
         overlap_deleted = None
         iou_threshold = args.iou_threshold if args.iou_threshold is not None else config.YOLO_FILTERING.IOU_THRESHOLD
+        containment_threshold = (args.containment_threshold if args.containment_threshold is not None
+                                 else getattr(config.YOLO_FILTERING, "CONTAINMENT_THRESHOLD", 0.75))
 
         if args.convert_to_yolo:
             if isaac_output_dir:
@@ -268,13 +281,51 @@ if __name__ == "__main__":
                 overlap_deleted = filter_overlapping_boxes(
                     yolo_dataset_path=yolo_output_dir,
                     iou_threshold=iou_threshold,
+                    containment_threshold=containment_threshold,
                 )
             else:
                 print("Skipping overlap filtering because YOLO conversion was not run or failed.")
 
         # ---- 4. REPORT --------------------------------------------------------
         if conv_stats is not None:
-            print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_output_dir)
+            print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_output_dir,
+                                containment_threshold=containment_threshold)
+
+        # ---- 5. PASSPORT: self-document this CLI run into the dataset AAS ------
+        if yolo_output_dir:
+            try:
+                if str(PROJECT_ROOT.parent) not in sys.path:
+                    sys.path.insert(0, str(PROJECT_ROOT.parent))
+                from aas_passport import record_run
+                s = conv_stats or {}
+                comps = getattr(args, "components", None) or getattr(args, "component_class", None)
+                gen_cfg = {
+                    "mode": "multi" if getattr(args, "multi_object", False) else "single",
+                    "components": ",".join(comps) if isinstance(comps, (list, tuple)) else comps,
+                    "light": args.light_mode, "env": args.load_env,
+                    "width": args.width, "height": args.height,
+                    "num_samples": args.num_samples,
+                    "min_visibility": args.min_visibility,
+                    "spawn_radius": getattr(args, "spawn_radius", None),
+                    "min_separation": getattr(args, "min_separation", None),
+                    "iou_threshold": iou_threshold,
+                    "containment_threshold": containment_threshold,
+                    "drop_truncated": args.drop_truncated,
+                    "filter_overlaps": args.filter_overlaps,
+                    "seed": args.seed,
+                }
+                meas = {
+                    "final_images": sum(1 for _ in Path(yolo_output_dir).rglob("*.png")),
+                    "frames_dropped_occluded": s.get("frames_dropped_occluded"),
+                    "frames_dropped_truncated": s.get("frames_dropped_truncated"),
+                    "frames_dropped_degenerate": s.get("frames_dropped_degenerate"),
+                    "boxes_kept": s.get("boxes_kept"),
+                }
+                p = record_run(Path(yolo_output_dir).name, "SDG", config=gen_cfg,
+                               measurements=meas, run_label="SDG", base_data_dir=str(yolo_output_dir))
+                print(f"--- AAS passport updated: {p} ---" if p else "--- AAS passport update skipped ---")
+            except Exception as _e:
+                print(f"--- AAS passport update skipped: {_e} ---")
 
     except Exception:
         import traceback

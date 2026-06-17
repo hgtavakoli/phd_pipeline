@@ -14,6 +14,7 @@ Start it with:  scripts\\launch_dashboard.bat   (or: python dashboard/server.py)
 Serves on http://127.0.0.1:8765 — localhost only, single user, one job at a time.
 """
 
+import codecs
 import json
 import mimetypes
 import os
@@ -38,7 +39,7 @@ DOCS_DIR = ROOT / "docs"
 DATASETS = SMARTSDG / "Datasets" / "yolo_experiments"
 RAW_OUTPUT = SMARTSDG / "Datasets" / "unified_render_output"
 # Template AAS cloned for per-dataset training configs (must parse without BOM).
-TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v2.0.json"
+TEMPLATE_AAS = AAS_DIR / "CA_Modul-OD_pipeline_v3.0.json"
 # Machine-specific paths are resolved portably (env var > pipeline_config.json >
 # auto-detect > fallback). See config_paths.py — no source edits needed per machine.
 sys.path.insert(0, str(ROOT))
@@ -123,10 +124,12 @@ def _to_container_path(arg):
     return arg
 
 
-def dockerize(cmd, cwd):
+def dockerize(cmd, cwd, val_real_override=None):
     """Wrap a native python command into a `docker run` invocation: mount the
     project at /workspace (and VAL_REAL at /valdata), set the workdir, translate
-    path args, and use the container's python. Returns (docker_cmd, cwd=ROOT)."""
+    path args, and use the container's python. Returns (docker_cmd, cwd=ROOT).
+    val_real_override: if the user supplied a custom val folder for this run,
+    mount that instead of the global VAL_REAL."""
     inner = []
     for a in cmd:
         if a in (str(TRAIN_PYTHON), "python", "cmd", "/c"):
@@ -137,9 +140,10 @@ def dockerize(cmd, cwd):
            "--shm-size=2g",
            "-e", f"SMARTSDG_WIN_ROOT={ROOT}",
            "-v", f"{ROOT}:/workspace"]
-    if VAL_REAL.exists():
-        run += ["-v", f"{VAL_REAL}:/valdata",
-                "-e", f"SMARTSDG_WIN_VAL_REAL={VAL_REAL}"]
+    effective_val = Path(val_real_override) if val_real_override else VAL_REAL
+    if effective_val.exists():
+        run += ["-v", f"{effective_val}:/valdata",
+                "-e", f"SMARTSDG_WIN_VAL_REAL={effective_val}"]
     run += ["-w", workdir, DOCKER_IMAGE, "python"] + inner
     return run, ROOT
 
@@ -163,11 +167,53 @@ _stream_token = 0
 _stream_active = False
 
 
+def _ingest_output(text, committed, state):
+    """Fold raw subprocess output into committed lines + one live (in-progress)
+    line. A carriage return (tqdm progress refresh) overwrites the live line
+    instead of spawning a new committed line; a newline finalizes the line.
+    CRLF is treated as a single newline (no blank lines on Windows/Docker)."""
+    for ch in text:
+        if state["cr"]:
+            state["cr"] = False
+            if ch == "\n":                       # CRLF -> finalize current line
+                committed.append(state["cur"]); state["cur"] = ""; state["live"] = ""
+                continue
+            # lone CR -> the line so far was a progress snapshot; keep it "live"
+            state["live"] = state["cur"]; state["cur"] = ""
+        if ch == "\r":
+            state["cr"] = True
+        elif ch == "\n":
+            committed.append(state["cur"]); state["cur"] = ""; state["live"] = ""
+        else:
+            state["cur"] += ch
+
+
 def _reader(job):
-    """Pump subprocess output into the in-memory log buffer."""
+    """Pump subprocess output into the in-memory log buffer, collapsing tqdm
+    progress bars (carriage-return updates) into a single live line instead of
+    one line per refresh. Reads raw bytes so '\\r' is preserved (text mode's
+    universal-newline translation would turn every refresh into a new line)."""
     proc = job["proc"]
-    for line in iter(proc.stdout.readline, ""):
-        job["lines"].append(line.rstrip("\r\n"))
+    dec = codecs.getincrementaldecoder("utf-8")("replace")
+    state = {"cur": "", "live": "", "cr": False}
+    job["live"] = ""
+    read1 = getattr(proc.stdout, "read1", None) or proc.stdout.read
+    while True:
+        chunk = read1(4096)
+        if not chunk:
+            break
+        text = dec.decode(chunk)
+        if text:
+            _ingest_output(text, job["lines"], state)
+            job["live"] = state["live"]
+    tail = dec.decode(b"", final=True)
+    if tail:
+        _ingest_output(tail, job["lines"], state)
+    if state["cr"]:
+        state["live"] = state["cur"]; state["cur"] = ""
+    if state["cur"]:
+        job["lines"].append(state["cur"])
+    job["live"] = ""
     proc.wait()
     job["returncode"] = proc.returncode
     job["lines"].append(f"--- process exited with code {proc.returncode} ---")
@@ -210,11 +256,16 @@ def start_job(name, cmd, cwd, meta=None):
     with _job_lock:
         if _job and _job["returncode"] is None:
             return False, f"A job is already running: {_job['name']}"
-        env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8")
+        # The dashboard records provenance itself (record_to_aas) after the job,
+        # so tell the stage's CLI to skip its own passport write — avoids double
+        # run-history entries. Direct CLI runs (no dashboard) won't see this flag.
+        env = dict(os.environ, PYTHONUNBUFFERED="1", PYTHONIOENCODING="utf-8",
+                   SMARTSDG_SKIP_PASSPORT="1")
+        # Binary stdout: '_reader' decodes + handles '\r' itself so tqdm progress
+        # bars collapse to a single live line (text mode would split on '\r').
         proc = subprocess.Popen(
             cmd, cwd=str(cwd),
-            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-            text=True, encoding="utf-8", errors="replace", env=env,
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, env=env,
         )
         _job = {
             "name": name,
@@ -222,6 +273,7 @@ def start_job(name, cmd, cwd, meta=None):
             "proc": proc,
             "lines": [f"$ {subprocess.list2cmdline(cmd)}", f"(cwd: {cwd})",
                       f"(interpreter on PATH: {__import__('shutil').which('python') or 'none'})", ""],
+            "live": "",
             "started": time.time(),
             "returncode": None,
             "meta": meta,
@@ -241,143 +293,12 @@ def stop_job():
         return False
 
 
-# --- AAS helpers ------------------------------------------------------------------
-
-def _aas_get_property(node, id_short):
-    """Recursively find the first AAS Property value by idShort."""
-    if isinstance(node, dict):
-        if node.get("modelType") == "Property" and node.get("idShort") == id_short:
-            return node.get("value")
-        for v in node.values():
-            r = _aas_get_property(v, id_short)
-            if r is not None:
-                return r
-    elif isinstance(node, list):
-        for v in node:
-            r = _aas_get_property(v, id_short)
-            if r is not None:
-                return r
-    return None
-
-
-def _aas_set_properties(node, targets):
-    """Recursively set AAS Property values by idShort."""
-    if isinstance(node, dict):
-        if node.get("modelType") == "Property" and node.get("idShort") in targets:
-            node["value"] = str(targets[node["idShort"]])
-        for v in node.values():
-            _aas_set_properties(v, targets)
-    elif isinstance(node, list):
-        for v in node:
-            _aas_set_properties(v, targets)
-
-
-# --- AAS section read/write (provenance: generation params + run outcomes) -----
-
-def _aas_find_node(node, id_short):
-    """Return the first SubmodelElement dict whose idShort matches."""
-    if isinstance(node, dict):
-        if node.get("idShort") == id_short:
-            return node
-        for v in node.values():
-            r = _aas_find_node(v, id_short)
-            if r is not None:
-                return r
-    elif isinstance(node, list):
-        for v in node:
-            r = _aas_find_node(v, id_short)
-            if r is not None:
-                return r
-    return None
-
-
-def _aas_prop(id_short, value):
-    return {"idShort": id_short, "valueType": "xs:string",
-            "value": "" if value is None else str(value), "modelType": "Property"}
-
-
-def _aas_parent_collection(data):
-    """The container we attach provenance sections to: prefer ODOptimisation,
-    else the first submodel's submodelElements, else the root list."""
-    od = _aas_find_node(data, "ODOptimisation")
-    if od is not None:
-        od.setdefault("value", [])
-        return od["value"]
-    sms = data.get("submodels") if isinstance(data, dict) else None
-    if sms and isinstance(sms, list) and sms[0].get("submodelElements") is not None:
-        return sms[0]["submodelElements"]
-    return None
-
-
-def _aas_upsert_section(data, section_id, props):
-    """Create/update a SubmodelElementList `section_id` of flat properties."""
-    container = _aas_parent_collection(data)
-    if container is None:
-        return False
-    sec = next((e for e in container if isinstance(e, dict) and e.get("idShort") == section_id), None)
-    if sec is None:
-        sec = {"idShort": section_id, "typeValueListElement": "SubmodelElement",
-               "modelType": "SubmodelElementList", "value": []}
-        container.append(sec)
-    sec.setdefault("value", [])
-    existing = {e.get("idShort"): e for e in sec["value"] if isinstance(e, dict)}
-    for k, v in props.items():
-        if k in existing:
-            existing[k]["value"] = "" if v is None else str(v)
-        else:
-            sec["value"].append(_aas_prop(k, v))
-    return True
-
-
-def _aas_append_run(data, entry: dict):
-    """Append one run-outcome record (a SubmodelElementCollection) to the
-    append-only 'RunHistory' list — every update is kept, not overwritten."""
-    container = _aas_parent_collection(data)
-    if container is None:
-        return False
-    hist = next((e for e in container if isinstance(e, dict) and e.get("idShort") == "RunHistory"), None)
-    if hist is None:
-        hist = {"idShort": "RunHistory", "typeValueListElement": "SubmodelElement",
-                "modelType": "SubmodelElementList", "value": []}
-        container.append(hist)
-    hist.setdefault("value", [])
-    rid = "run_" + time.strftime("%Y%m%dT%H%M%S")
-    hist["value"].append({
-        "idShort": rid, "modelType": "SubmodelElementCollection",
-        "value": [_aas_prop(k, v) for k, v in entry.items()],
-    })
-    return True
-
-
-def _aas_read_record(aas_path):
-    """Read the provenance sections from a dataset AAS into a plain dict for the
-    dashboard: GenerationParameters, latest-stage Results, and RunHistory."""
-    try:
-        data = json.loads(Path(aas_path).read_text(encoding="utf-8-sig"))
-    except Exception:
-        return {}
-
-    def section(id_short):
-        node = _aas_find_node(data, id_short)
-        if not node or not node.get("value"):
-            return {}
-        return {e.get("idShort"): e.get("value") for e in node["value"]
-                if isinstance(e, dict) and e.get("modelType") == "Property"}
-
-    hist = _aas_find_node(data, "RunHistory")
-    runs = []
-    if hist and hist.get("value"):
-        for coll in hist["value"]:
-            if isinstance(coll, dict) and coll.get("value"):
-                runs.append({e.get("idShort"): e.get("value") for e in coll["value"]
-                             if isinstance(e, dict)})
-    return {
-        "generation": section("GenerationParameters"),
-        "results": section("Results"),
-        "active_learning": section("ActiveLearning"),
-        "continual_learning": section("ContinualLearning"),
-        "runs": runs,
-    }
+# --- AAS helpers (single source of truth lives in aas_passport.py at repo root) ---
+from aas_passport import (  # noqa: E402
+    _aas_find_node, _aas_get_property, _aas_set_properties, _aas_prop,
+    _aas_parent_collection, _aas_upsert_section, _aas_append_run, _aas_read_record,
+    _strip_provenance,
+)
 
 
 def _find_dataset_aas_path(rel_or_name):
@@ -465,8 +386,8 @@ def record_to_aas(job):
     # A) generation parameters
     if stage == "SDG":
         keys = ["mode", "light", "samples", "env", "width", "height", "min_visibility",
-                "spawn_radius", "min_separation", "iou_threshold", "drop_truncated",
-                "filter_overlaps", "seed", "renderer", "spp", "max_bounces", "denoiser"]
+                "spawn_radius", "min_separation", "iou_threshold", "containment_threshold",
+                "drop_truncated", "filter_overlaps", "seed", "renderer", "spp", "max_bounces", "denoiser"]
         gen = {k: meta.get(k) for k in keys if meta.get(k) is not None}
         if meta.get("components"):
             gen["components"] = ",".join(meta["components"])
@@ -623,11 +544,21 @@ def generate_dataset_aas(dataset_rel, meta=None):
 
     Files are organized by generation date: AAS/datasets/YYYY-MM-DD/<name>.json.
     If a config for the same dataset already exists (any date), it is updated
-    in place instead of duplicated."""
+    in place instead of duplicated.
+
+    The source schema is the v2.0 template by default, but meta['class_aas'] (the
+    SDG tab's "Class source (AAS file)" pick) overrides it — so the AAS you choose
+    at the SDG stage is the one the new passport is born from."""
     d = _safe_path(dataset_rel)
     if not d.is_dir():
         raise ValueError(f"dataset not found: {d}")
-    data = json.loads(TEMPLATE_AAS.read_text(encoding="utf-8-sig"))
+    template = TEMPLATE_AAS
+    if meta and meta.get("class_aas"):
+        cand = (AAS_DIR / meta["class_aas"])
+        if cand.exists():
+            template = cand
+    data = json.loads(template.read_text(encoding="utf-8-sig"))
+    _strip_provenance(data)   # template is a schema — don't inherit any run residue
     cameras = sorted({p.parent.name if p.parent != d else "" for p in _iter_images(d)} - {""}) \
               or ["Replicator", "Replicator_01"]
     _aas_set_properties(data, {
@@ -996,6 +927,11 @@ def build_sdg_cmd(p):
            "--width", str(int(p.get("width", 640))),
            "--height", str(int(p.get("height", 480))),
            "--convert_to_yolo"]
+    # AAS-as-config: read SDG parameters from the picked AAS (config.yaml fallback).
+    if p.get("class_aas"):
+        aas_abs = AAS_DIR / p["class_aas"]
+        if aas_abs.exists():
+            cmd += ["--aas_file", str(aas_abs)]
     if p.get("mode") == "multi":
         cmd.append("--multi_object")
         comps = p.get("components") or []
@@ -1013,7 +949,8 @@ def build_sdg_cmd(p):
     if p.get("drop_truncated", True):
         cmd.append("--drop_truncated")
     if p.get("filter_overlaps", True):
-        cmd += ["--filter_overlaps", "--iou_threshold", str(p.get("iou_threshold", 0.7))]
+        cmd += ["--filter_overlaps", "--iou_threshold", str(p.get("iou_threshold", 0.7)),
+                "--containment_threshold", str(p.get("containment_threshold", 0.75))]
     if p.get("seed"):
         cmd += ["--seed", str(int(p["seed"]))]
     # Renderer hyperparameters (only sent when user overrides the config defaults)
@@ -1047,22 +984,58 @@ def build_train_cmd(p):
             overrides[key] = int(p[key])
     if p.get("weights"):
         overrides["weights"] = p["weights"]
+    val_override = None
+    if p.get("val_data_path"):
+        vp = str(p["val_data_path"]).strip()
+        if vp:
+            overrides["val_data_path"] = vp
+            val_override = vp
+    # Templates (v2.0.json, etc.) at the AAS root are NEVER modified — they are
+    # read-only references. Every run's record lives exclusively in its dedicated
+    # AAS under AAS/datasets/<date>/.
+    is_dataset_aas = "datasets" in safe.relative_to(AAS_DIR).parts
     if overrides:
         data = json.loads(safe.read_text(encoding="utf-8-sig"))
         _aas_set_properties(data, overrides)
-        is_dataset_aas = "datasets" in safe.relative_to(AAS_DIR).parts
         if is_dataset_aas:
-            # persist: the dataset AAS is the canonical training record
+            # Already pointing at the dedicated record — write directly.
             safe.write_text(json.dumps(data, indent=1), encoding="utf-8")
         else:
-            tmp = Path(tempfile.gettempdir()) / f"dashboard_run_{safe.stem}.json"
-            tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
-            safe = tmp
+            # Template selected: locate the dedicated dataset AAS via base_data_dir
+            # and apply ALL overrides there so the run is fully documented.
+            # The template itself is never touched.
+            dedicated = None
+            try:
+                base_dir = _aas_get_property(data, "base_data_dir") or ""
+                ds_name = Path(base_dir.rstrip("\\/")).name
+                if ds_name:
+                    hits = list((AAS_DIR / "datasets").rglob(
+                        f"CA_Modul-OD_dataset_{ds_name}.json"))
+                    if hits:
+                        dedicated = hits[0]
+            except Exception:
+                pass
+            if dedicated:
+                ds_data = json.loads(dedicated.read_text(encoding="utf-8-sig"))
+                _aas_set_properties(ds_data, overrides)
+                dedicated.write_text(json.dumps(ds_data, indent=1), encoding="utf-8")
+                safe = dedicated          # training runs from the dedicated AAS
+            else:
+                # No dedicated AAS exists yet — fall back to a temp copy so
+                # training still works; overrides will not be persisted.
+                tmp = Path(tempfile.gettempdir()) / f"dashboard_run_{safe.stem}.json"
+                tmp.write_text(json.dumps(data, indent=1), encoding="utf-8")
+                safe = tmp
     python = TRAIN_PYTHON if Path(TRAIN_PYTHON).exists() else shutil.which("python")
     if not python:
         raise ValueError("No training interpreter found — set TRAIN_PYTHON in dashboard/server.py "
                          "or launch the dashboard from an activated env (e.g. conda activate yolov12).")
-    return [python, "main.py", "--mode", "train", "--aas_file", str(safe)]
+    cmd = [python, "main.py", "--mode", "train", "--aas_file", str(safe)]
+    if p.get("patience") not in (None, "", 0):
+        cmd += ["--patience", str(int(p["patience"]))]
+    if p.get("cos_lr"):
+        cmd.append("--cos_lr")
+    return cmd, val_override
 
 
 # --- Filesystem helpers -----------------------------------------------------------
@@ -1125,9 +1098,12 @@ def list_results():
     return out
 
 
-def dataset_preview(rel, limit=12):
+def dataset_preview(rel, limit=12, camera=None):
     d = _safe_path(rel)
-    return [str(p.relative_to(ROOT)) for p in sorted(_iter_images(d))[:limit]]
+    imgs = sorted(_iter_images(d))
+    if camera:                       # restrict to one camera-geometry subfolder
+        imgs = [p for p in imgs if p.parent.name == camera]
+    return [str(p.relative_to(ROOT)) for p in imgs[:limit]]
 
 
 # --- HTTP handler -----------------------------------------------------------------
@@ -1147,7 +1123,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _file(self, path, ctype=None):
         try:
-            data = Path(path).read_bytes()
+            p = Path(path)
+            ps = str(p)
+            # Windows MAX_PATH is 260 chars; use \\?\ prefix for longer paths.
+            if sys.platform == "win32" and len(ps) > 259 and not ps.startswith("\\\\?\\"):
+                ps = "\\\\?\\" + ps
+            with open(ps, "rb") as fh:
+                data = fh.read()
         except OSError:
             self.send_error(404)
             return
@@ -1289,6 +1271,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"lines": [], "next": 0, "done": True, "returncode": None})
             lines = j["lines"][since:]
             return self._json({"lines": lines, "next": since + len(lines),
+                               "live": j.get("live", ""),
                                "done": j["returncode"] is not None,
                                "returncode": j["returncode"]})
 
@@ -1328,6 +1311,21 @@ class Handler(BaseHTTPRequestHandler):
             # Pretrained/base weights available in OD_training (for the dropdown)
             pts = sorted(f.name for f in OD_DIR.glob("*.pt"))
             return self._json(pts)
+
+        if route == "/api/aas_val":
+            # Return the val_data_path stored in a given AAS file so the
+            # training tab can show the current value before the user decides
+            # whether to override it.
+            aas_rel = q.get("aas", [""])[0]
+            try:
+                aas_path = (AAS_DIR / aas_rel).resolve()
+                if not str(aas_path).startswith(str(AAS_DIR.resolve())) or not aas_path.exists():
+                    return self._json({"error": "AAS not found"}, 400)
+                data = json.loads(aas_path.read_text(encoding="utf-8-sig"))
+                val = _aas_get_property(data, "val_data_path") or ""
+                return self._json({"val_data_path": val})
+            except Exception as e:
+                return self._json({"error": str(e)}, 500)
 
         if route == "/api/inference_images":
             # Run YOLO on a folder of images; return per-image box predictions +
@@ -1570,7 +1568,8 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/preview":
             try:
-                return self._json(dataset_preview(q["rel"][0]))
+                return self._json(dataset_preview(q["rel"][0],
+                                                  camera=(q.get("camera", [None])[0] or None)))
             except Exception as e:
                 return self._json({"error": str(e)}, 400)
 
@@ -1656,12 +1655,12 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/run_train":
             try:
-                cmd = build_train_cmd(payload)
+                cmd, val_override = build_train_cmd(payload)
             except Exception as e:
                 return self._json({"ok": False, "error": str(e)}, 400)
             cwd = OD_DIR
             if docker_enabled():
-                cmd, cwd = dockerize(cmd, OD_DIR)
+                cmd, cwd = dockerize(cmd, OD_DIR, val_real_override=val_override)
             ok, err = start_job("OD training", cmd, cwd, meta={**payload, "stage": "training"})
             return self._json({"ok": ok, "error": err})
 

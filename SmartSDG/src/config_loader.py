@@ -67,6 +67,10 @@ class YOLOConversionConfig:
 class YOLOFilteringConfig:
     enabled: bool
     IOU_THRESHOLD: float
+    # Geometric-collapse guard: drop a frame if one box is at least this fraction
+    # (intersection / smaller-box area) inside another. Catches a small box nested
+    # in a big one — which IoU misses (low IoU, high containment). Default 0.75.
+    CONTAINMENT_THRESHOLD: float = 0.75
 
 @dataclass
 class SimulationConfig:

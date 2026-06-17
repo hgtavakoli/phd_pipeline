@@ -10,6 +10,7 @@ Config loading: YAML file -> structured, validated AppConfig object.
   * syncs the simulation viewport size to the camera resolution.
 """
 
+import json
 import os
 import sys
 from pathlib import Path
@@ -26,14 +27,171 @@ from config_loader import (AppConfig, CameraConfig, GenerationParamsConfig, Path
                            YOLOConversionConfig, YOLOFilteringConfig)
 
 
-def load_and_process_config(config_path: str, project_root: Path) -> AppConfig:
-    """Load the YAML configuration file into a structured AppConfig object."""
+# ---------------------------------------------------------------------------
+#  AAS -> SDG config (opt-in): read the SDG parameters from an AAS file so the
+#  passport, not config.yaml, drives a run. config.yaml stays the fallback for
+#  any section the AAS does not carry, so nothing breaks if a field is absent.
+#
+#  Only the cleanly-typed, faithfully-mirrored sections are sourced from the AAS:
+#  generation_params (scene/spawning/camera), YOLO_CONVERSION, YOLO_FILTERING,
+#  SIMULATION_CONFIG. The class registry (COMPONENT_USD_MAP, stored in valueId)
+#  and the light tables remain config.yaml-authoritative.
+# ---------------------------------------------------------------------------
+
+# Full set of SDG config sections that a faithful AAS (v3.0+) carries. v2.0 only
+# mirrors a subset cleanly; the converter sources whatever is present and lets
+# config.yaml fill the rest, so this is safe against either template version.
+_AAS_SDG_SECTIONS = ("paths", "generation_params", "COMPONENT_USD_MAP", "YOLO_CONVERSION",
+                     "YOLO_FILTERING", "LIGHT_INTENSITY_MAP", "LIGHT_TEMPERATURE_MEAN",
+                     "LIGHT_TEMPERATURE_STD", "LIGHT_POSITIONS", "SIMULATION_CONFIG",
+                     "RTX_CARB_SETTINGS")
+
+
+def _aas_find(node, id_short):
+    if isinstance(node, dict):
+        if node.get("idShort") == id_short:
+            return node
+        for v in node.values():
+            r = _aas_find(v, id_short)
+            if r is not None:
+                return r
+    elif isinstance(node, list):
+        for v in node:
+            r = _aas_find(v, id_short)
+            if r is not None:
+                return r
+    return None
+
+
+def _aas_coerce(prop):
+    """AAS Property -> typed Python value, honouring valueType.
+    Handles two extra cases so the same reader works for v2.0 and v3.0:
+      - value blank but valueId present (COMPONENT_USD_MAP stores USD in valueId),
+      - value is a JSON array/object string (list-valued leaves like
+        LIGHT_INTENSITY_MAP entries / LIGHT_POSITIONS)."""
+    vt = (prop.get("valueType") or "").lower()
+    val = prop.get("value")
+    if (val is None or val == "") and prop.get("valueId"):
+        try:
+            return prop["valueId"]["keys"][0]["value"]
+        except (KeyError, IndexError, TypeError):
+            pass
+    if val is None:
+        return None
+    if isinstance(val, str) and val[:1] in "[{":
+        try:
+            return json.loads(val)
+        except ValueError:
+            pass
+    if vt == "xs:boolean":
+        return str(val).strip().lower() == "true"
+    if vt in ("xs:int", "xs:integer", "xs:long"):
+        try:
+            return int(float(val))
+        except (TypeError, ValueError):
+            return val
+    if vt in ("xs:float", "xs:double", "xs:decimal"):
+        try:
+            return float(val)
+        except (TypeError, ValueError):
+            return val
+    return val
+
+
+def _build_aas_node(id_short, value):
+    """config.yaml value -> faithful AAS SubmodelElement node (the inverse of the
+    reader above): dict -> Collection, list -> JSON-in-value Property, scalar ->
+    typed Property. Round-trips through aas_sdg_overrides()."""
+    if isinstance(value, dict):
+        return {"idShort": id_short, "modelType": "SubmodelElementCollection",
+                "value": [_build_aas_node(k, v) for k, v in value.items()]}
+    if isinstance(value, list):
+        return {"idShort": id_short, "valueType": "xs:string",
+                "value": json.dumps(value), "modelType": "Property"}
+    if isinstance(value, bool):
+        return {"idShort": id_short, "valueType": "xs:boolean",
+                "value": "true" if value else "false", "modelType": "Property"}
+    if isinstance(value, int):
+        return {"idShort": id_short, "valueType": "xs:integer",
+                "value": str(value), "modelType": "Property"}
+    if isinstance(value, float):
+        return {"idShort": id_short, "valueType": "xs:float",
+                "value": repr(value), "modelType": "Property"}
+    return {"idShort": id_short, "valueType": "xs:string",
+            "value": "" if value is None else str(value), "modelType": "Property"}
+
+
+def sdg_config_to_aas_nodes(raw_config) -> list:
+    """Build faithful AAS nodes for every SDG section present in a config.yaml
+    dict — used to generate the v3.0 template's 'SmartSDG' collection so the AAS
+    is a 1:1 source for SDG (proven by the round-trip self-test)."""
+    return [_build_aas_node(s, raw_config[s]) for s in _AAS_SDG_SECTIONS
+            if raw_config.get(s) is not None]
+
+
+def _aas_parse(node):
+    """Parse an AAS SubmodelElement (dict form) into a plain Python value:
+    Collection/List -> dict keyed by child idShort; Property -> typed scalar."""
+    mt = node.get("modelType")
+    if mt in ("SubmodelElementCollection", "SubmodelElementList"):
+        out = {}
+        for child in node.get("value") or []:
+            if isinstance(child, dict) and child.get("idShort"):
+                out[child["idShort"]] = _aas_parse(child)
+        return out
+    if mt == "Property":
+        return _aas_coerce(node)
+    return node.get("value")
+
+
+def aas_sdg_overrides(aas_path: str) -> dict:
+    """Extract the faithfully-mirrored SDG sections from an AAS file as a
+    config.yaml-shaped dict. Returns {} on any problem (caller falls back to
+    config.yaml)."""
+    try:
+        data = json.loads(Path(aas_path).read_text(encoding="utf-8-sig"))
+    except Exception as e:
+        print(f"[config] could not read AAS '{aas_path}': {e}; using config.yaml")
+        return {}
+    overrides = {}
+    for section in _AAS_SDG_SECTIONS:
+        node = _aas_find(data, section)
+        if node is not None:
+            parsed = _aas_parse(node)
+            if parsed is not None:   # accept scalars, lists, and empty dicts too
+                overrides[section] = parsed
+    return overrides
+
+
+def _deep_merge(base: dict, over: dict) -> dict:
+    """Recursively merge `over` into `base` (over wins); returns base."""
+    for k, v in over.items():
+        if isinstance(v, dict) and isinstance(base.get(k), dict):
+            _deep_merge(base[k], v)
+        elif v is not None:
+            base[k] = v
+    return base
+
+
+def load_and_process_config(config_path: str, project_root: Path, aas_path: str = None) -> AppConfig:
+    """Load the YAML configuration file into a structured AppConfig object.
+
+    If `aas_path` is given, the SDG sections found in that AAS file override the
+    matching config.yaml values (config.yaml fills any gaps) — so the passport
+    drives the run while staying robust if the AAS lacks a field."""
     print(f"Loading configuration from: {config_path}")
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Configuration file not found at: {config_path}")
 
     with open(config_path, 'r') as f:
         raw_config = yaml.safe_load(f)
+
+    if aas_path:
+        overrides = aas_sdg_overrides(aas_path)
+        if overrides:
+            print(f"  > Applying SDG config from AAS: {', '.join(overrides)} "
+                  f"(config.yaml fills the rest) [{aas_path}]")
+            _deep_merge(raw_config, overrides)
 
     # --- Validate required sections ---
     if not raw_config.get('paths'):

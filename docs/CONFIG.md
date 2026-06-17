@@ -2,14 +2,17 @@
 
 The pipeline deliberately uses a small, layered set of config sources rather
 than one giant file, so that cross-stage defaults, the class registry, per-machine
-paths, and per-dataset records each live where they belong. There are **four**:
+paths, and per-dataset records each live where they belong. There are **four**
+config files plus one programmatic API layer (`aas_passport.py`):
 
 | File | Scope | Edit when… | In git? |
 |---|---|---|---|
 | **`pipeline.yaml`** | Cross-stage **defaults** the dashboard pre-fills (SDG, Training, AL, CL, inference) + a mirror of the class list | you want to change the default values shown in the dashboard for any stage | ✅ |
 | **`SmartSDG/src/config/config.yaml`** | SDG scene/camera/renderer params **and the authoritative `COMPONENT_USD_MAP`** (defines global class IDs; read directly by Isaac Sim) | you change SDG rendering internals, or add a component (auto-appended) | ✅ |
-| **`AAS/datasets/<date>/*.json`** | The **per-dataset record** — the training/AL/CL parameters actually used for that dataset (record mode) | never by hand normally; the dashboard writes these | ✅ |
+| **`AAS/datasets/<date>/*.json`** | The **per-dataset record** — the training/AL/CL parameters actually used for that dataset (record mode) | never by hand normally; the dashboard or `aas_passport.py` writes these | ✅ |
 | **`pipeline_config.json`** | **Per-machine paths** (Isaac python, training python, val images) | once per machine (or use env vars / auto-detect) | ❌ (git-ignored) |
+
+**`aas_passport.py`** (repo root, stdlib-only) is the **programmatic API layer** over the per-dataset records. Every pipeline stage uses `Passport.for_dataset(name)` to open or create a passport, then `read_config` / `write_config` / `write_measurements` / `append_run` / `save` to read and write its slice of that file. Do not manipulate AAS JSON directly — use this module instead.
 
 ## Why not one single file?
 
@@ -50,9 +53,10 @@ The dashboard writes into it automatically:
 - **`RunHistory`** — an **append-only** log: one entry per completed run (stage,
   status, finished_at, duration, metrics). Every update is kept, not overwritten.
 
-The dashboard's **Datasets → 📋 AAS record** button reads all of this back via
-`/api/dataset_aas`, so the pipeline can be tracked entirely from the AAS and the
-record is consumable by other modules (IEC 63278).
+The dashboard's **Datasets → AAS passport** view reads all of this back and
+presents it as a per-stage hyperparameter survey (SDG / Training / AL / CL /
+Latest results) via `/api/dataset_aas`, so the pipeline can be tracked entirely
+from the AAS and the record is consumable by other modules (IEC 63278).
 
 ## Legacy / unused configs
 

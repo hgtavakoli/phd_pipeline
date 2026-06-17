@@ -3,7 +3,7 @@
 [![CI](https://github.com/hgtavakoli/phd_pipeline/actions/workflows/ci.yml/badge.svg)](https://github.com/hgtavakoli/phd_pipeline/actions/workflows/ci.yml)
 
 > **Author:** Hooman Tavakoli Ghinani
-> **Version:** 2.2.0 — see [CHANGELOG.md](CHANGELOG.md)
+> **Version:** 2.6.0 — see [CHANGELOG.md](CHANGELOG.md)
 > **Status:** all five stages dashboard-integrated; every action recorded in AAS (per-dataset records + a factory `pipeline_history` event log, IEC 63278).
 > **Frozen reference:** the original, validated v1 lives untouched at `C:\Users\hota02\Documents\SDG\` — never modify it.
 
@@ -23,6 +23,7 @@ End-to-end research pipeline: **Synthetic Data Generation (NVIDIA Isaac Sim) →
 SDG_v2/
 ├── README.md                  ← you are here
 ├── CHANGELOG.md               ← what changed vs. v1 (keep it updated!)
+├── aas_passport.py            ← AAS API layer (stdlib-only): Passport.for_dataset / read_config / write_measurements / append_run
 ├── VERSION
 ├── requirements.txt           ← Python deps for OD / AL / CL / inference
 ├── .gitignore
@@ -167,7 +168,11 @@ These rules are enforced in `yolo_converter.py` — keep them when modifying:
    An image containing a visible-but-unlabeled object poisons OD training.
 2. Every kept image contains **only fully-visible (≥95%), fully-labeled,
    border-free objects** under the default filter settings.
-3. Class IDs are global across all datasets (see table above).
+3. **Geometric collapse is caught in 2D.** A frame is dropped if two label
+   boxes nearly coincide (IoU ≥ 0.7) **or** a small box is ≥ 75% inside a
+   bigger one (`containment_threshold` — catches the nested case that IoU
+   misses). Depth is intentionally ignored.
+4. Class IDs are global across all datasets (see table above).
 
 ## Validated hyperparameter defaults
 
@@ -182,6 +187,7 @@ each one does and *why* these values):
 | `iou_threshold` (overlap filter) | 0.7 | `config.yaml` |
 | `multi_spawn_radius` | 0.2 m | `config.yaml` |
 | `min_separation` | 0.05 m | `main.py` default |
+| `containment_threshold` (nested-box filter) | 0.75 | `config.yaml` |
 
 > ⚠ **SDG is highly sensitive to these.** Change one at a time, regenerate a
 > small batch (e.g. 20 samples), inspect images + FINAL DATASET SUMMARY, and
@@ -210,10 +216,10 @@ scripts\run_tests.bat        :: static checks (~10 s, no GPU)
 scripts\run_tests.bat full   :: + real SDG generation + training (~2-5 min)
 ```
 
-11 checks across 3 tiers: config/AAS/asset consistency, converter quality
-filters (frame-drop invariant), exp-folder routing, then a real Isaac Sim
-generation and a 1-epoch training producing weights. Exit code 0 = all good;
-test artifacts are cleaned up automatically.
+12 checks across 3 tiers: config/AAS/asset consistency, converter quality
+filters (frame-drop invariant), AAS passport roundtrip, exp-folder routing,
+then a real Isaac Sim generation and a 1-epoch training producing weights.
+Exit code 0 = all good; test artifacts are cleaned up automatically.
 
 ---
 

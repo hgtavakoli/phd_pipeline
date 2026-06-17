@@ -1,5 +1,6 @@
 # main_cl.py
 import argparse
+import sys
 from pathlib import Path
 from cl_src.cl_orchestrator import run_incremental_step
 
@@ -51,6 +52,27 @@ def main():
     print("--- Starting Incremental Learning Step ---")
     run_incremental_step(args)
     print("\n--- Incremental Learning Step Finished ---")
+
+    # PASSPORT: self-document this CLI continual-learning run into the dataset AAS.
+    try:
+        repo_root = Path(__file__).resolve().parent.parent
+        if str(repo_root) not in sys.path:
+            sys.path.insert(0, str(repo_root))
+        from aas_passport import record_run
+        ds_name = Path(str(args.new_data_dir).replace('\\', '/').rstrip('/')).name
+        cl_cfg = {
+            "cl_strategy": "replay",
+            "current_classes": ", ".join(args.current_classes),
+            "new_classes": ", ".join(args.new_classes),
+            "input_model": args.model_weights,
+            "replay_ratio": args.replay_ratio,
+            "epochs": args.epochs, "batch_size": args.batch_size, "img_size": args.img_size,
+        }
+        p = record_run(ds_name, "CL", config=cl_cfg, run_label="CL",
+                       base_data_dir=str(args.new_data_dir))
+        print(f"--- AAS passport updated: {p} ---" if p else "--- AAS passport update skipped ---")
+    except Exception as _e:
+        print(f"--- AAS passport update skipped: {_e} ---")
 
 
 if __name__ == '__main__':

@@ -55,8 +55,13 @@ YOLO_CONVERSION:
 YOLO_FILTERING:
   # Set 'enabled' to true to run the filter, false to skip it.
   enabled: true
-  # Define the IoU threshold for deleting overlapping boxes.
+  # Define the IoU threshold for deleting overlapping boxes (two boxes nearly
+  # coincide -> geometric collapse).
   IOU_THRESHOLD: 0.7
+  # Containment threshold: drop a frame if one box is at least this fraction
+  # (intersection / smaller-box area) inside another. Catches a small box nested
+  # in a big one, which IoU alone misses.
+  CONTAINMENT_THRESHOLD: 0.75
 
 LIGHT_INTENSITY_MAP:
   Low: [5000, 500]

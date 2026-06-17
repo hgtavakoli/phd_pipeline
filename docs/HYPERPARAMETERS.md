@@ -42,15 +42,22 @@ visible-but-unlabeled object poisons OD training).
 |---|---|---|---|
 | `--min_visibility` | **0.95** | Replicator `occlusionRatio` — real 3D occlusion **by other objects** | any object is > 5% hidden behind another |
 | `--drop_truncated` | **on** | bbox touching the image border | any object is partially **outside the camera frame** |
-| `--filter_overlaps` + `--iou_threshold` | **on, 0.7** | IoU of final YOLO **label rectangles** | two boxes overlap ≥ 0.7 |
+| `--filter_overlaps` + `--iou_threshold` | **on, 0.7** | IoU of final YOLO **label rectangles** | two boxes nearly coincide (IoU ≥ 0.7) |
+| `--filter_overlaps` + `--containment_threshold` | **on, 0.75** | intersection ÷ **smaller** box area | a small box is ≥ 75% inside a bigger one |
 | (automatic) | always | degenerate zero-area boxes | an object exists but no valid box can be written |
 
 ### min_visibility vs filter_overlaps — not the same thing!
 - `min_visibility` = true 3D occlusion (is the object hidden?). The
   scientifically meaningful one.
-- `filter_overlaps` = 2D rectangle intersection. Two fully visible side-by-side
-  objects can still have overlapping *boxes*. Coarse safety net only.
-- With `min_visibility 0.95` active, the overlap filter rarely fires.
+- `filter_overlaps` = 2D rectangle geometry. Two boxes can collapse either by
+  **coinciding** (high IoU) or by **nesting** — a small box inside a big one.
+  IoU stays low for the nested case (the union is dominated by the big box), so
+  `containment_threshold` (intersection ÷ smaller-box area) catches it. Depth is
+  ignored: a heavy geometric overlap is dropped regardless of which object is in
+  front, because the cost of mislabelled boxes outweighs keeping the frame.
+- With `min_visibility 0.95` active, the overlap filter rarely fires — but the
+  containment guard is what catches a small object swallowed by a big one when
+  its `occlusionRatio` happened to stay under the visibility threshold.
 
 ### Policies
 `--occlusion_policy` / `--truncation_policy`: `frame` (default — discard whole
