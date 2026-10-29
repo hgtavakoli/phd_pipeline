@@ -295,7 +295,7 @@ def stop_job():
 
 # --- AAS helpers (single source of truth lives in aas_passport.py at repo root) ---
 import llm  # local LLM assistant (Ollama) — see dashboard/llm.py
-from aas_passport import (  # noqa: E402
+from aas_passport import (
     _aas_find_node, _aas_get_property, _aas_set_properties, _aas_prop,
     _aas_parent_collection, _aas_upsert_section, _aas_append_run, _aas_read_record,
     _strip_provenance,
@@ -1389,9 +1389,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if route == "/api/llm_models":          # LLM assistant: installed Ollama models
             try:
-                return self._json({"ok": True, "models": llm.list_models(), "default": llm.DEFAULT_MODEL})
+                return self._json({"ok": True, "models": llm.list_models(), "default": llm.DEFAULT_MODEL,
+                                   "prompts": llm.list_prompts(), "default_prompt": llm.DEFAULT_PROMPT})
             except Exception as e:
-                return self._json({"ok": False, "error": str(e), "models": [], "default": llm.DEFAULT_MODEL})
+                return self._json({"ok": False, "error": str(e), "models": [], "default": llm.DEFAULT_MODEL,
+                                   "prompts": llm.list_prompts(), "default_prompt": llm.DEFAULT_PROMPT})
         if route == "/api/status":
             j = _job
             return self._json({
@@ -1786,7 +1788,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Type", "application/x-ndjson")
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
-            gen = llm.chat_stream(payload.get("messages", []), payload.get("model"))
+            gen = llm.chat_stream(payload.get("messages", []), payload.get("model"),
+                                  payload.get("prompt"), payload.get("temperature"))
             try:
                 for event in gen:
                     self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
@@ -1798,7 +1801,8 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if route == "/api/chat":                # LLM assistant: one chat turn
-            return self._json(llm.chat(payload.get("messages", []), payload.get("model")))
+            return self._json(llm.chat(payload.get("messages", []), payload.get("model"),
+                                       payload.get("prompt"), payload.get("temperature")))
 
         if route == "/api/run_sdg":
             try:
