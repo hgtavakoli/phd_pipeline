@@ -80,3 +80,6 @@ temp_*.yaml
 
 
 CLAUDE.md
+
+# ----- LLM assistant: RAG index (rebuilt from docs/ with: python dashboard/rag.py build) -----
+dashboard/rag_index.json

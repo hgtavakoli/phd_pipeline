@@ -60,7 +60,7 @@ def build_messages(messages, prompt=None, use_rag=False, k=4):
         import rag                                   # imported here: rag.py imports llm.py
         question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
         hits = rag.search(question, k=k)
-        sources = [{k_: h[k_] for k_ in ("score", "source", "title")} for h in hits]
+        sources = [{k_: h[k_] for k_ in ("score", "mmr", "source", "title")} for h in hits]
         ctx = rag.format_context(hits)
         system = system.replace("{context}", ctx) if "{context}" in system else system + "\n\n<context>\n" + ctx + "\n</context>"
     head = [{"role": "system", "content": system}] if system else []
