@@ -77,3 +77,6 @@ docs/img/_ud_*/
 *.log
 *.tmp
 temp_*.yaml
+
+
+CLAUDE.md

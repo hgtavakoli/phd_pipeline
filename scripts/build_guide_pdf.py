@@ -42,7 +42,7 @@ TABS = [
 ]
 
 # markdown files in order, each becomes a chapter
-CHAPTERS = ["GUIDE.md", "ACTIVE_LEARNING.md", "HYPERPARAMETERS.md", "PORTABILITY.md"]
+CHAPTERS = ["GUIDE.md", "LIGHTING_REALISM.md", "ACTIVE_LEARNING.md", "HYPERPARAMETERS.md", "PORTABILITY.md"]
 
 
 def find_edge():

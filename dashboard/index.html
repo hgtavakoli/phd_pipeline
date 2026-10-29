@@ -27,7 +27,8 @@
   h3{font-size:.9rem;color:var(--text2);margin:12px 0 8px}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
   label{display:block;font-size:.8rem;color:var(--text2);margin-bottom:3px}
-  select,input[type=number],input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:.88rem}
+  select,input[type=number],input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:.88rem;max-width:100%;box-sizing:border-box}
+  select{text-overflow:ellipsis}
   .row{display:flex;flex-wrap:wrap;gap:14px;align-items:end;margin-bottom:12px}
   .chips{display:flex;flex-wrap:wrap;gap:6px}
   .chips label{display:inline-flex;align-items:center;gap:5px;background:var(--panel2);border:1px solid var(--border);border-radius:6px;padding:5px 10px;font-size:.82rem;color:var(--text);cursor:pointer;margin:0}
@@ -173,6 +174,32 @@
       </div>
       <p class="muted">spp is the main quality/speed knob: 8 = fast iteration (denoiser cleans the noise), 32–64 = final dataset quality. More bounces = better indirect light, slower. Full reference: Docs → Hyperparameters.</p>
     </details>
+    <details style="margin:6px 0 10px">
+      <summary style="cursor:pointer;color:var(--accent2);font-size:.85rem">📷 Camera noise post-processing (reduce sim-to-real gap)</summary>
+      <div style="margin-top:10px">
+        <div class="row">
+          <div><label class="chips" style="display:inline-flex"><input id="fCamNoise" type="checkbox" onchange="updatePreview()"> Enable camera noise</label></div>
+        </div>
+        <div class="row" style="margin-top:8px">
+          <div><label>Gaussian sigma <span class="muted">(sensor noise)</span></label>
+            <input id="fGaussianSigma" type="number" min="0" max="30" step="0.5" value="5" style="width:80px"></div>
+          <div><label>Blur sigma <span class="muted">(lens defocus, 0=off)</span></label>
+            <input id="fBlurSigma" type="number" min="0" max="5" step="0.1" value="0" style="width:80px"></div>
+        </div>
+        <p class="muted">Applied to all images after generation — labels are untouched. Gaussian sigma: 5=subtle, 10=moderate, 15=strong. Blur: 0.5–1.0=slight defocus.</p>
+      </div>
+    </details>
+    <details style="margin:6px 0 10px">
+      <summary style="cursor:pointer;color:var(--accent2);font-size:.85rem">⚙ Isaac Sim path (advanced — change only if auto-detection fails)</summary>
+      <div style="margin-top:10px">
+        <div class="row" style="align-items:center;gap:8px;flex-wrap:nowrap">
+          <label style="white-space:nowrap;font-size:.82rem;min-width:110px">python.bat path</label>
+          <input id="fIsaacPath" type="text" style="flex:1;font-size:.82rem;font-family:Consolas,monospace" placeholder="auto-detected">
+          <button onclick="saveIsaacPath()" style="white-space:nowrap">Save</button>
+        </div>
+        <p class="muted" id="isaacPathMsg" style="margin-top:6px">Full path to Isaac Sim's python.bat (or python.sh on Linux). Saved to pipeline_config.json and takes effect immediately. Leave blank to restore auto-detection. run_sdg.bat reads the same file.</p>
+      </div>
+    </details>
     <div class="cmdline" id="sdgCmdPreview"></div>
     <div class="row" style="margin-top:12px">
       <button class="primary" id="btnRunSdg" onclick="runSdg()">▶ Run generation</button>
@@ -273,6 +300,17 @@
     <table id="resTable"><thead><tr><th>Run</th><th>Weights</th><th>Modified</th><th></th></tr></thead><tbody></tbody></table>
     <p class="muted" style="margin-top:8px">“Open” launches Windows Explorer at the run folder (weights, curves, confusion matrices…).</p>
   </div>
+
+  <div class="card">
+    <div class="row" style="align-items:center">
+      <h2 style="margin:0">📈 Training curve</h2>
+      <select id="curveRun" style="min-width:260px" onchange="drawCurve()"></select>
+      <button class="secondary" onclick="loadCurveRuns(true)">⟳ Refresh</button>
+    </div>
+    <canvas id="curveCanvas" style="width:100%;height:340px;display:block"></canvas>
+    <div class="muted" id="curveLegend" style="margin-top:6px"></div>
+    <p class="muted">Validation precision / recall / mAP50 / mAP50-95 per epoch (from the run’s <code>results.csv</code>). Hit Refresh while training to watch it climb.</p>
+  </div>
 </div>
 
 <!-- ============ ③ INFERENCE ============ -->
@@ -296,7 +334,9 @@
         <input id="infFolder" type="text" placeholder="C:\path\to\images" style="width:300px">
         <button class="secondary" style="padding:5px 10px" onclick="openFolderPickerFor('infFolder')">📁 Browse…</button></div>
       <div><label>Conf threshold</label><input id="infConf" type="number" step="0.05" value="0.25" style="width:80px"></div>
+      <div><label>Image size <span data-info="inf_imgsz"></span></label><input id="infImgsz" type="number" step="32" placeholder="auto" style="width:90px"></div>
       <div><label>Max images</label><input id="infLimit" type="number" value="30" min="1" max="200" style="width:80px"></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="infAlign" type="checkbox"> align to SDG output (AAS) <span data-info="inf_align"></span></label></div>
       <button class="primary" id="btnRunInference" onclick="runInferenceImages()">▶ Run Inference</button>
     </div>
     <div id="infImagesGrid" class="thumbs" style="margin-top:12px"></div>
@@ -323,6 +363,8 @@
         <input id="lvVideo" type="text" placeholder="C:\path\to\video.mp4" style="width:280px">
         <button class="secondary" style="padding:5px 10px" onclick="openVideoPicker()">📁</button></div>
       <div><label>Conf <span data-info="live_conf"></span></label><input id="lvConf" type="number" step="0.05" value="0.25" style="width:80px"></div>
+      <div><label>Image size <span data-info="inf_imgsz"></span></label><input id="lvImgsz" type="number" step="32" placeholder="auto" style="width:90px"></div>
+      <div><label>&nbsp;</label><label class="chips" style="display:inline-flex"><input id="lvAlign" type="checkbox"> align frames to SDG output (AAS) <span data-info="inf_align"></span></label></div>
       <button class="primary" id="btnLive" onclick="lvStart()">▶ Start</button>
       <button class="danger" onclick="lvStop()">■ Stop</button>
     </div>
@@ -478,6 +520,7 @@
     <h2>Project documentation</h2>
     <div class="doclist">
       <button class="primary" onclick="loadDoc('GUIDE.md')">📖 Full User Guide</button>
+      <button class="primary" onclick="loadDoc('DASHBOARD_GUIDE.md')">🧭 Dashboard guide (steps + errors)</button>
       <button class="primary" onclick="window.open('/img?p='+encodeURIComponent('docs\\SmartSDG_Guide.pdf'),'_blank')">⬇ Download PDF guide (with screenshots)</button>
       <button class="secondary" onclick="loadDoc('README.md')">README</button>
       <button class="secondary" onclick="loadDoc('HYPERPARAMETERS.md')">Hyperparameters</button>
@@ -517,6 +560,7 @@ git push</pre>
 // cross-checks the AAS class list, config.yaml COMPONENT_USD_MAP (order =
 // global YOLO class IDs), and the USD files on disk.
 let COMPONENTS = ["Ylid","YTrailer","Cabin","GlueGun","BLid","BTrailer","FChassis","Rchassis","BlackCabin"];
+let SDG_PATHS = {isaac_python: 'python.bat', smartsdg: ''};
 let COMP_ITEMS = COMPONENTS.map(n=>({name:n, available:true, reason:''}));
 const $ = id => document.getElementById(id);
 
@@ -627,7 +671,7 @@ function clInit(){
   fetch('/api/results').then(r=>r.json()).then(list=>{
     const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
     fetch('/api/weights').then(r=>r.json()).then(ws=>{
-      $('clModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— train a model first —</option>';
+      $('clModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}" title="${w}">${optLabel(w)}</option>`).join('')||'<option value="">— train a model first —</option>';
       clOnModelChange();
     });
   });
@@ -689,7 +733,7 @@ function loadLiveModels(){
   fetch('/api/results').then(r=>r.json()).then(list=>{
     const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
     fetch('/api/weights').then(r=>r.json()).then(ws=>{
-      $('lvModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— no models —</option>';
+      $('lvModel').innerHTML=[...runs,...ws].map(w=>`<option value="${w}" title="${w}">${optLabel(w)}</option>`).join('')||'<option value="">— no models —</option>';
     });
   });
 }
@@ -713,7 +757,11 @@ function lvStart(){
   if(stype==='webcam') src=$('lvCam').value;
   else if(stype==='ipcam'){ src=($('lvIpUrl').value||'').trim(); if(!src){alert('Enter a stream URL (e.g. rtsp://...)');return;} }
   else { src=($('lvVideo').value||'').trim(); if(!src){alert('Pick a video file');return;} }
-  const url='/stream?model='+encodeURIComponent(model)+'&source='+encodeURIComponent(src)+'&conf='+(+$('lvConf').value)+'&t='+Date.now();
+  const imgsz=($('lvImgsz').value||'').trim();
+  let url='/stream?model='+encodeURIComponent(model)+'&source='+encodeURIComponent(src)+'&conf='+(+$('lvConf').value);
+  if(imgsz) url+='&imgsz='+encodeURIComponent(imgsz);
+  if($('lvAlign').checked) url+='&align=1';
+  url+='&t='+Date.now();
   $('lvView').innerHTML=`<img src="${url}" style="max-width:100%;border:1px solid var(--border);border-radius:8px" onerror="$('lvView').innerHTML='<p class=muted>Could not open the source (camera in use, bad path, or stream URL unreachable).</p>'">`;
 }
 function lvStop(){ const v=$('lvView'); if(v){ v.innerHTML=''; } fetch('/api/stop_stream',{method:'POST'}).catch(()=>{}); }
@@ -733,7 +781,7 @@ function infLoadModels(){
     const runs=list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
     fetch('/api/weights').then(r=>r.json()).then(ws=>{
       const all=[...runs,...ws];
-      if($('infModel')) $('infModel').innerHTML=all.map(w=>`<option value="${w}">${w}</option>`).join('')||'<option value="">— no models —</option>';
+      if($('infModel')) $('infModel').innerHTML=all.map(w=>`<option value="${w}" title="${w}">${optLabel(w)}</option>`).join('')||'<option value="">— no models —</option>';
     });
   });
 }
@@ -745,7 +793,10 @@ async function runInferenceImages(){
   $('infImagesGrid').innerHTML='<p class="muted">Running inference, please wait…</p>';
   $('btnRunInference').disabled=true;
   try{
-    const url='/api/inference_images?model='+encodeURIComponent(model)+'&folder='+encodeURIComponent(folder)+'&conf='+($('infConf').value||0.25)+'&limit='+($('infLimit').value||30);
+    const imgsz=($('infImgsz').value||'').trim();
+    let url='/api/inference_images?model='+encodeURIComponent(model)+'&folder='+encodeURIComponent(folder)+'&conf='+($('infConf').value||0.25)+'&limit='+($('infLimit').value||30);
+    if(imgsz) url+='&imgsz='+encodeURIComponent(imgsz);
+    if($('infAlign').checked) url+='&align=1';
     const res=await fetch(url).then(r=>r.json());
     if(res.error){$('infImagesGrid').innerHTML=`<p style="color:var(--red)">Error: ${res.error}</p>`;return;}
     if(!res.length){$('infImagesGrid').innerHTML='<p class="muted">No images found, or no detections above the confidence threshold.</p>';return;}
@@ -784,7 +835,7 @@ function loadHarvestModels(){
     const runs = list.filter(d=>d.weights===true).map(d=>`${d.rel.replace(/\\/g,'/')}/weights/best.pt`);
     fetch('/api/weights').then(r=>r.json()).then(ws=>{
       const all=[...runs, ...ws];
-      $('hModel').innerHTML = all.map(w=>`<option value="${w}" ${w.includes('v12')&&runs.length===0?'selected':''}>${w}</option>`).join('')
+      $('hModel').innerHTML = all.map(w=>`<option value="${w}" title="${w}" ${w.includes('v12')&&runs.length===0?'selected':''}>${optLabel(w)}</option>`).join('')
         || '<option value="">— no models —</option>';
     });
   });
@@ -992,7 +1043,7 @@ function loadClassAasList(){
   const cur = $('fClassAas').value;
   fetch('/api/aas').then(r=>r.json()).then(files=>{
     $('fClassAas').innerHTML = files.map(f=>
-      `<option ${f===cur||(!cur&&f.includes('v3.0'))?'selected':''}>${f}</option>`).join('');
+      `<option value="${f}" title="${f}" ${f===cur||(!cur&&f.includes('v3.0'))?'selected':''}>${optLabel(f)}</option>`).join('');
     loadComponents();
   });
 }
@@ -1024,11 +1075,16 @@ function sdgPayload(){
     spp: $('fSpp').value ? +$('fSpp').value : null,
     max_bounces: $('fBounces').value ? +$('fBounces').value : null,
     denoiser: $('fDenoiser').value || null,
+    camera_noise: $('fCamNoise').checked,
+    noise_gaussian_sigma: +($('fGaussianSigma').value)||5.0,
+    noise_blur_sigma: +($('fBlurSigma').value)||0.0,
   };
 }
 function updatePreview(){
   const p = sdgPayload();
-  let c = `python.bat main.py --light_mode ${p.light} --num_samples ${p.samples} --load_env ${p.env} --width ${p.width} --height ${p.height} --convert_to_yolo`;
+  const pyField = $('fIsaacPath');
+  const py = (pyField && pyField.value.trim()) || SDG_PATHS.isaac_python || 'python.bat';
+  let c = `${py} main.py --light_mode ${p.light} --num_samples ${p.samples} --load_env ${p.env} --width ${p.width} --height ${p.height} --convert_to_yolo`;
   if(p.mode==='multi'){ c += ' --multi_object'; if(p.components.length && p.components.length<COMPONENTS.length) c += ` --components ${p.components.join(',')}`;
     c += ` --spawn_radius ${p.spawn_radius} --min_separation ${p.min_separation}`; }
   else c += ` --component_class ${p.components[0]||'GlueGun'}`;
@@ -1040,7 +1096,9 @@ function updatePreview(){
   if(p.spp) c += ` --spp ${p.spp}`;
   if(p.max_bounces) c += ` --max_bounces ${p.max_bounces}`;
   if(p.denoiser) c += ` --denoiser ${p.denoiser}`;
-  $('sdgCmdPreview').textContent = c;
+  if(p.camera_noise){ c += ` --camera_noise --noise_gaussian_sigma ${p.noise_gaussian_sigma}`; if(p.noise_blur_sigma>0) c += ` --noise_blur_sigma ${p.noise_blur_sigma}`; }
+  const cdLine = SDG_PATHS.smartsdg ? `cd /d ${SDG_PATHS.smartsdg}\n` : '';
+  $('sdgCmdPreview').textContent = cdLine + c;
 }
 document.querySelectorAll('#tab-sdg select, #tab-sdg input').forEach(el=>el.addEventListener('input',updatePreview));
 updatePreview();
@@ -1077,8 +1135,8 @@ async function runTrain(){
   startConsole('OD training');
 }
 fetch('/api/weights').then(r=>r.json()).then(ws=>{
-  $('tWeights').innerHTML += ws.map(w=>`<option value="${w}">${w}</option>`).join('');
-  $('alWeights').innerHTML = ws.map(w=>`<option value="${w}" ${w.includes('v12')?'selected':''}>${w}</option>`).join('');});
+  $('tWeights').innerHTML += ws.map(w=>`<option value="${w}" title="${w}">${optLabel(w)}</option>`).join('');
+  $('alWeights').innerHTML = ws.map(w=>`<option value="${w}" title="${w}" ${w.includes('v12')?'selected':''}>${optLabel(w)}</option>`).join('');});
 
 // ---------- active learning ----------
 function loadAlDatasets(){
@@ -1198,6 +1256,17 @@ async function pollStatus(){
 }
 setInterval(pollStatus, 1500); pollStatus();
 
+// Short, bounded label for long path options (full path stays the value + title)
+function optLabel(p){
+  if(!p) return p;
+  const parts=String(p).replace(/\\/g,'/').split('/');
+  let lab=(parts[parts.length-1]==='best.pt' && parts.length>=3)
+    ? parts.slice(-3,-1).join('/')                                   // <dataset>/<camera>
+    : parts[parts.length-1].replace(/^CA_Modul-OD_dataset_/,'').replace(/\.json$/,'');
+  if(lab.length>46) lab=lab.slice(0,22)+'…'+lab.slice(-22);          // middle-truncate
+  return lab;
+}
+
 // ---------- datasets ----------
 async function loadDatasets(){
   const list = await fetch('/api/datasets').then(r=>r.json());
@@ -1315,6 +1384,45 @@ async function loadResults(){
     `<tr><td>${d.name}</td><td>${d.weights===true?'✔':d.weights===false?'<span style="color:var(--text2)">—</span>':''}</td><td>${d.modified}</td>
      <td><button class="secondary" onclick="openPath('${d.rel.replace(/\\/g,'\\\\')}')">Open</button></td></tr>`).join('')
     || '<tr><td colspan="4" class="muted">No results yet — run a training.</td></tr>';
+  loadCurveRuns();
+}
+function loadCurveRuns(redraw){
+  fetch('/api/results').then(r=>r.json()).then(list=>{
+    const sel=$('curveRun'); if(!sel) return;
+    const cur=sel.value;
+    sel.innerHTML = (list||[]).map(d=>{const v=d.rel.replace(/\\/g,'/'); return `<option value="${v}" title="${v}">${optLabel(v)}</option>`;}).join('') || '<option value="">— no runs —</option>';
+    if(cur && [...sel.options].some(o=>o.value===cur)) sel.value=cur;
+    drawCurve();
+  });
+}
+function drawCurve(){
+  const cv=$('curveCanvas'); if(!cv) return;
+  const rel=($('curveRun')||{}).value||'', leg=$('curveLegend'), ctx=cv.getContext('2d');
+  const DPR=window.devicePixelRatio||1, W=cv.clientWidth||600, H=340;
+  cv.width=W*DPR; cv.height=H*DPR; ctx.setTransform(DPR,0,0,DPR,0,0); ctx.clearRect(0,0,W,H);
+  if(!rel){ leg.textContent=''; return; }
+  fetch('/api/training_curve?rel='+encodeURIComponent(rel)).then(r=>r.json()).then(d=>{
+    ctx.clearRect(0,0,W,H);
+    if(d.error){ leg.textContent=d.error; return; }
+    const xs=d.epoch||[]; if(!xs.length){ leg.textContent='no epochs recorded yet'; return; }
+    const padL=42,padR=14,padT=12,padB=28, x0=padL,x1=W-padR,y0=H-padB,y1=padT;
+    const xmin=Math.min(...xs), xmax=Math.max(...xs);
+    const SX=v=> x0+(xmax>xmin?(v-xmin)/(xmax-xmin):0)*(x1-x0), SY=v=> y0-v*(y0-y1);
+    const cs=getComputedStyle(document.body);
+    const grid=cs.getPropertyValue('--border')||'#444', txt=cs.getPropertyValue('--text2')||'#999';
+    ctx.font='11px sans-serif'; ctx.lineWidth=0.5; ctx.strokeStyle=grid; ctx.fillStyle=txt;
+    for(let t=0;t<=1.0001;t+=0.25){ const y=SY(t); ctx.beginPath(); ctx.moveTo(x0,y); ctx.lineTo(x1,y); ctx.stroke(); ctx.fillText(t.toFixed(2),6,y+3); }
+    ctx.fillText('ep '+xmin, x0, H-10); ctx.fillText('ep '+xmax, x1-36, H-10);
+    const series=[['Precision',d.precision,'#378ADD'],['Recall',d.recall,'#1D9E75'],['mAP50',d.map50,'#EF9F27'],['mAP50-95',d.map5095,'#E24B4A']];
+    series.forEach(([nm,arr,col])=>{
+      if(!arr||!arr.length) return;
+      ctx.strokeStyle=col; ctx.lineWidth=1.6; ctx.beginPath(); let started=false;
+      for(let i=0;i<arr.length;i++){ const v=arr[i]; if(v==null){started=false;continue;} const X=SX(xs[i]),Y=SY(v); started?ctx.lineTo(X,Y):ctx.moveTo(X,Y); started=true; }
+      ctx.stroke();
+    });
+    const last=a=>{ if(!a||!a.length) return '—'; const f=a.filter(v=>v!=null); return f.length?f[f.length-1]:'—'; };
+    leg.innerHTML = series.map(([nm,a,c])=>`<span style="color:${c}">■ ${nm}: <b>${last(a)}</b></span>`).join(' &nbsp; ') + ` &nbsp; <span class="muted">(${d.csv||''})</span>`;
+  });
 }
 
 // ---------- docs / aas ----------
@@ -1322,7 +1430,7 @@ async function loadDoc(f){ $('docText').textContent = await fetch('/api/doc?f='+
 function loadAasList(){
   fetch('/api/aas').then(r=>r.json()).then(files=>{
     const cur = $('fAas').value;
-    $('fAas').innerHTML = files.map(f=>`<option ${f===cur||(!cur&&f.includes('v3.0'))?'selected':''}>${f}</option>`).join('');
+    $('fAas').innerHTML = files.map(f=>`<option value="${f}" title="${f}" ${f===cur||(!cur&&f.includes('v3.0'))?'selected':''}>${optLabel(f)}</option>`).join('');
     onAasChange();
   });
 }
@@ -1343,6 +1451,13 @@ function trainValToggle(){
 }
 loadAasList();
 fetch('/api/doc?f=VERSION').then(r=>r.ok?r.text():'v2').then(v=>$('verChip').textContent='v'+v.trim());
+fetch('/api/paths').then(r=>r.json()).then(d=>{ SDG_PATHS=d; const el=$('fIsaacPath'); if(el) el.value=d.isaac_python||''; updatePreview(); }).catch(()=>{});
+async function saveIsaacPath(){
+  const v=($('fIsaacPath').value||'').trim();
+  const r=await post('/api/save_path',{key:'isaac_python',value:v});
+  if(r.ok){ SDG_PATHS.isaac_python=r.resolved||v; updatePreview(); $('isaacPathMsg').textContent='✔ Saved'+(r.resolved?' — active path: '+r.resolved:'')+'.';}
+  else alert('Error: '+r.error);
+}
 // Master defaults from pipeline.yaml — one place sets every stage's form values.
 function setVal(id,v){ const e=$(id); if(e!=null && v!=null) e.value=v; }
 function setChk(id,v){ const e=$(id); if(e!=null && v!=null) e.checked=!!v; }
@@ -1354,6 +1469,7 @@ fetch('/api/defaults').then(r=>r.json()).then(d=>{
   setVal('fVis', (s.min_visibility!=null)?String(s.min_visibility):null);
   setVal('fSpawn',s.spawn_radius); setVal('fSep',s.min_separation); setVal('fIou',s.iou_threshold); setVal('fCont',s.containment_threshold);
   setChk('fTrunc',s.drop_truncated); setChk('fOvl',s.filter_overlaps);
+  setChk('fCamNoise',s.camera_noise); setVal('fGaussianSigma',s.noise_gaussian_sigma); setVal('fBlurSigma',s.noise_blur_sigma);
   // Active learning
   setVal('alStrategy',a.strategy); setChk('alBalance',a.class_balance);
   setVal('alRounds',a.rounds); setVal('alInit',a.initial_subset); setVal('alAdd',a.add_per_round);
@@ -1459,6 +1575,10 @@ Object.assign(INFO, {
     long:'This is the real-data side of Active Learning. The model predicts on your real images, scores each by uncertainty, and keeps the top-N most uncertain with predictions as pre-labels. You review/correct them (✏ Edit) and Accept into a REAL_ dataset for further training.'},
   inf_model:{short:'The trained detector to run (any best.pt from Results, or a base weight).',
     long:'Use a model trained on your synthetic data to find the real images it is least sure about — those are the most valuable to label.'},
+  inf_align:{short:'Crop+resize each frame to the SDG output geometry recorded in the model’s AAS passport (width/height), so inference matches training exactly.',
+    long:'Reads GenerationParameters width/height from the dataset passport the model was trained on (falls back to 640×480). Each camera frame / image is centre-cropped to that aspect ratio and resized to those dims before detection — removing the sim-to-deploy geometry gap. Combine with auto imgsz for a 1:1 match to training preprocessing.'},
+  inf_imgsz:{short:'Inference image size. Leave blank to auto-match the size the model was trained at.',
+    long:'YOLO letterboxes every frame to a square of this size (e.g. 640), so raw camera/image dimensions need not equal the training images — but the imgsz should match training for best accuracy. Blank = use the model checkpoint’s training imgsz (recommended). The "match training 4:3" option also makes the webcam capture 640×480 to mirror the SDG field of view.'},
   inf_source:{short:'Folder of real, unlabelled images to scan. Use Browse to pick it.',
     long:'All images in the folder are scored; the most uncertain are kept. Use the Browse button to navigate your drives instead of typing the path.'},
   inf_top:{short:'How many of the most-uncertain images to keep for review.',

@@ -4,6 +4,100 @@ All notable changes to this pipeline are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com). Record **every**
 hyperparameter change — SDG results are highly sensitive to them.
 
+## [2.9.1] — 2026-06-18
+
+### Camera-realism post-processing for an existing dataset (no re-generation)
+
+- `SmartSDG/src/camera_noise.py` gains `apply_camera_realism()` + `process_dataset()`
+  + a CLI: apply subtle, randomized real-camera perturbations (sensor noise, lens
+  softness, exposure/contrast + white-balance drift, JPEG artefacts) to an
+  already-generated YOLO dataset, instead of re-running SDG with realism on.
+- PHOTOMETRIC only — geometry is untouched, so **labels are copied unchanged**.
+  Default writes a parallel `<name>_real` dataset (clean originals preserved);
+  `--in-place` overwrites. Seeded RNG for reproducibility; per-image jitter.
+- Usage: `python SmartSDG/src/camera_noise.py <dataset_dir> [--out <dir>]
+  [--in-place] [--gaussian 6] [--blur 0.5] [--brightness 0.12] [--contrast 0.12]
+  [--color 0.05] [--jpeg 85] [--seed 0]`.
+- Self-test: new `camera-realism post-processing` check.
+- **Train a post-processed dataset without a new passport**, two ways:
+  - `OD_training/main.py --data_dir <folder>` overrides the AAS `base_data_dir`,
+    so you reuse an existing passport but train on the perturbed copy.
+  - `camera_noise.py` creates a passport for the new dataset **by default** (cloned
+    from the v3.0 template, `base_data_dir` → the new folder) so it trains like
+    any other dataset, including headless/cluster. `--no-make-aas` to skip.
+
+## [2.9.0] — 2026-06-18
+
+### Training curve chart, cluster CLI, and headless-friendly paths
+
+- **Dashboard training curve**: Results tab now has a 📈 line chart (run picker +
+  Refresh) plotting per-epoch **precision / recall / mAP50 / mAP50-95** from a
+  run's `results.csv`. New `/api/training_curve` endpoint + `training_curve()`
+  reader; chart drawn on a plain `<canvas>` (no external library). Refresh while
+  training to watch it climb.
+- **Custom validation set → dataset AAS** (confirmed): setting a custom
+  `val_data_path` in the Training tab writes it into that dataset's passport
+  (record mode, `build_train_cmd`) — the passport already carries a
+  `val_data_path` property, so the override persists with the run.
+- **Cluster / headless training**: `OD_training/main.py` now anchors all I/O to
+  the script location (`OD_ROOT`), not the cwd, so the same command works from
+  the repo root under `srun`; outputs always land in `OD_training/results/`. The
+  `--aas_file` accepts absolute or repo-/OD-/cwd-relative paths (`_resolve_aas`),
+  and its default is the v3.0 template. New `scripts/train_cluster.sh` wraps a
+  SLURM/container run (installs `aas-core3.0` if the image lacks it, prints GPU
+  info, passes extra args through).
+- **Fix**: `do_POST` declared `global ISAAC_PYTHON, TRAIN_PYTHON` after using
+  them (latent `SyntaxError`); moved the declaration to the top of the handler.
+- **Headless path alignment** (`OD_training/main.py` `_localize_paths`): a
+  passport recorded on Windows stores absolute `C:\...` data paths that don't
+  exist on a Linux cluster. Training now re-roots any repo-internal data
+  (`SmartSDG/Datasets/...`) under THIS repo, so the same passport + command find
+  the data wherever the repo is mounted. External real val/test are overridable
+  via `SMARTSDG_VAL_REAL` / `SMARTSDG_TEST_REAL`; if the val set is still missing,
+  the trainer falls back to the training set (with a warning) so the run
+  completes. `trainer_aas` uses that resolved val dir.
+- Self-test: new `training-curve from results.csv` + `cluster path localization`
+  checks. Full static 21/21.
+- **`--val_dir` / `--test_dir` CLI flags** on `OD_training/main.py` to point the
+  validation / test set at a cluster folder, e.g.
+  `--val_dir /netscratch/.../data/val_new_2`. Precedence: CLI flag ▸
+  `SMARTSDG_VAL_REAL` env ▸ AAS `val_data_path` ▸ training set (fallback).
+
+## [2.8.6] — 2026-06-17
+
+### Inference — align frames to the SDG geometry from the AAS + dropdown overflow fix
+
+- **AAS-driven frame alignment**: a new "align to SDG output (AAS)" toggle (live
+  stream + folder inference) reads the model's dataset passport
+  (`GenerationParameters.width/height` via `_sdg_target_for_model`) and
+  centre-crops + resizes each frame to that exact geometry (`_crop_resize_to`,
+  fallback 640×480) before detection — so a real camera/image matches the
+  training preprocessing with no distortion. Folder inference thumbnails are built
+  from the aligned frame so the normalised box overlay stays correct.
+- **Dropdown overflow**: long AAS/model paths no longer push selects out of the
+  card — `select` is capped at `max-width:100%` with ellipsis, and option labels
+  are shortened (`optLabel`: dataset/camera or de-boilerplated name, middle-
+  truncated) while the full path stays as the value + hover title.
+- Self-test: new `inference frame alignment to SDG` check.
+
+## [2.8.5] — 2026-06-17
+
+### Dashboard — per-camera dataset preview + inference imgsz aligned to training
+
+- **Dataset preview** can now be filtered per camera: a Replicator / Replicator_01
+  radio selector (shown only for multi-camera datasets) drives `/api/preview`
+  (`camera=` param → `dataset_preview` filters by camera subfolder). The Edit-
+  labels callback preserves the selected camera.
+- **Inference image size** now matches the model's training imgsz instead of
+  ultralytics' fixed 640 default. New `_resolve_imgsz` / `_model_trained_imgsz`
+  read the imgsz from the checkpoint; both live streaming (`/stream`) and folder
+  inference (`/api/inference_images`) pass it to `model.predict`. An optional
+  **Image size** field (blank = auto-match training) is added to both inference
+  modes, plus a **match training 4:3 (640×480)** capture toggle for webcams so
+  the field of view mirrors the SDG data. (Raw frame dims need not equal training
+  dims — YOLO letterboxes — but imgsz should, which this now guarantees.)
+- Self-test: new `inference imgsz matches training` check.
+
 ## [2.8.4] — 2026-06-17
 
 ### SDG — clean handling when generation produced no frames (no more TypeError)

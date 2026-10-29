@@ -56741,7 +56741,7 @@
         {
          "idShort": "val_data_path",
          "valueType": "xs:string",
-         "value": "C:\\Users\\hota02\\Documents/sd_light_od/cluster_experiments/data/val_real",
+         "value": "C:\\Users\\hota02\\Documents\\sd_light_od\\cluster_experiments\\data\\val_new_2",
          "modelType": "Property"
         },
         {
@@ -57024,6 +57024,66 @@
            "idShort": "final_images",
            "valueType": "xs:string",
            "value": "187",
+           "modelType": "Property"
+          }
+         ]
+        },
+        {
+         "idShort": "run_20261007T200012",
+         "modelType": "SubmodelElementCollection",
+         "value": [
+          {
+           "idShort": "stage",
+           "valueType": "xs:string",
+           "value": "training",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "status",
+           "valueType": "xs:string",
+           "value": "failed(1)",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "finished_at",
+           "valueType": "xs:string",
+           "value": "2026-10-07T20:00:12",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "duration_s",
+           "valueType": "xs:string",
+           "value": "176",
+           "modelType": "Property"
+          }
+         ]
+        },
+        {
+         "idShort": "run_20261007T200234",
+         "modelType": "SubmodelElementCollection",
+         "value": [
+          {
+           "idShort": "stage",
+           "valueType": "xs:string",
+           "value": "training",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "status",
+           "valueType": "xs:string",
+           "value": "failed(1)",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "finished_at",
+           "valueType": "xs:string",
+           "value": "2026-10-07T20:02:34",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "duration_s",
+           "valueType": "xs:string",
+           "value": "137",
            "modelType": "Property"
           }
          ]

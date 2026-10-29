@@ -63,6 +63,12 @@ YOLO_FILTERING:
   # in a big one, which IoU alone misses.
   CONTAINMENT_THRESHOLD: 0.75
 
+# --- Camera noise post-processing (applied after YOLO conversion, labels unchanged) ---
+CAMERA_NOISE:
+  enabled: false
+  gaussian_sigma: 5.0   # pixel-value std (0–255); 5 = subtle, 15 = strong; 0 = off
+  blur_sigma: 0.0       # Gaussian blur radius for lens-defocus; 0 = off
+
 LIGHT_INTENSITY_MAP:
   Low: [5000, 500]
   Medium: [20000, 5000]

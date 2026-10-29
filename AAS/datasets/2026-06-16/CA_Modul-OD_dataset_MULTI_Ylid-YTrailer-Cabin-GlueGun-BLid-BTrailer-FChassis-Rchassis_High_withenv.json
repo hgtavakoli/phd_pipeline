@@ -57355,6 +57355,103 @@
            "modelType": "Property"
           }
          ]
+        },
+        {
+         "idShort": "run_20261007T195627",
+         "modelType": "SubmodelElementCollection",
+         "value": [
+          {
+           "idShort": "stage",
+           "valueType": "xs:string",
+           "value": "training",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "status",
+           "valueType": "xs:string",
+           "value": "success",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "finished_at",
+           "valueType": "xs:string",
+           "value": "2026-10-07T19:56:27",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "duration_s",
+           "valueType": "xs:string",
+           "value": "12",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "map50",
+           "valueType": "xs:string",
+           "value": "0.8117",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "map50_95",
+           "valueType": "xs:string",
+           "value": "0.61",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "epochs",
+           "valueType": "xs:string",
+           "value": "11",
+           "modelType": "Property"
+          },
+          {
+           "idShort": "model_path",
+           "valueType": "xs:string",
+           "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp2\\MULTI_Cabin-BTrailer-FChassis_Medium_withenv\\Replicator_015\\weights\\best.pt",
+           "modelType": "Property"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "idShort": "Results",
+       "typeValueListElement": "SubmodelElement",
+       "modelType": "SubmodelElementList",
+       "value": [
+        {
+         "idShort": "stage",
+         "valueType": "xs:string",
+         "value": "training",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "updated_at",
+         "valueType": "xs:string",
+         "value": "2026-10-07T19:56:27",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "map50",
+         "valueType": "xs:string",
+         "value": "0.8117",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "map50_95",
+         "valueType": "xs:string",
+         "value": "0.61",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "epochs",
+         "valueType": "xs:string",
+         "value": "11",
+         "modelType": "Property"
+        },
+        {
+         "idShort": "model_path",
+         "valueType": "xs:string",
+         "value": "C:\\Users\\hota02\\Documents\\SDG_v2\\OD_training\\results\\yolo_run\\exp2\\MULTI_Cabin-BTrailer-FChassis_Medium_withenv\\Replicator_015\\weights\\best.pt",
+         "modelType": "Property"
         }
        ]
       }

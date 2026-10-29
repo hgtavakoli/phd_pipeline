@@ -140,6 +140,18 @@ def build_arg_parser() -> argparse.ArgumentParser:
                              "--filter_overlaps: drop a frame when a small box is this fraction\n"
                              "inside a bigger one (IoU misses this). Default:\n"
                              "YOLO_FILTERING.CONTAINMENT_THRESHOLD from config.yaml (0.75).")
+
+    # --- Camera noise post-processing (Group 4 hyperparameters) ---------------
+    parser.add_argument("--camera_noise", action="store_true",
+                        help="Apply simulated sensor noise to the YOLO dataset images after\n"
+                             "generation (Gaussian noise + optional blur). Labels unchanged.\n"
+                             "Reduces the sim-to-real domain gap.")
+    parser.add_argument("--noise_gaussian_sigma", type=float, default=5.0,
+                        help="Std of Gaussian pixel noise (0–255 range). 5 = subtle, 15 = strong.\n"
+                             "0 disables Gaussian noise. Default: 5.0")
+    parser.add_argument("--noise_blur_sigma", type=float, default=0.0,
+                        help="Gaussian blur radius (pixels) for lens-defocus simulation.\n"
+                             "0 = disabled. 0.5–1.0 = subtle, >1.5 = noticeable. Default: 0.0")
     return parser
 
 
@@ -286,7 +298,19 @@ if __name__ == "__main__":
             else:
                 print("Skipping overlap filtering because YOLO conversion was not run or failed.")
 
-        # ---- 4. REPORT --------------------------------------------------------
+        # ---- 4. CAMERA NOISE post-processing ------------------------------------
+        if args.camera_noise and yolo_output_dir:
+            from src.camera_noise import apply_noise_to_dataset
+            n_noised = apply_noise_to_dataset(
+                yolo_output_dir,
+                gaussian_sigma=args.noise_gaussian_sigma,
+                blur_sigma=args.noise_blur_sigma,
+            )
+            print(f"--- Camera noise applied to {n_noised} images "
+                  f"(gaussian_sigma={args.noise_gaussian_sigma}, "
+                  f"blur_sigma={args.noise_blur_sigma}) ---")
+
+        # ---- 5. REPORT --------------------------------------------------------
         if conv_stats is not None:
             print_final_summary(args, conv_stats, overlap_deleted, iou_threshold, yolo_output_dir,
                                 containment_threshold=containment_threshold)
@@ -313,6 +337,9 @@ if __name__ == "__main__":
                     "drop_truncated": args.drop_truncated,
                     "filter_overlaps": args.filter_overlaps,
                     "seed": args.seed,
+                    "camera_noise": args.camera_noise,
+                    "noise_gaussian_sigma": args.noise_gaussian_sigma if args.camera_noise else None,
+                    "noise_blur_sigma": args.noise_blur_sigma if args.camera_noise else None,
                 }
                 meas = {
                     "final_images": sum(1 for _ in Path(yolo_output_dir).rglob("*.png")),

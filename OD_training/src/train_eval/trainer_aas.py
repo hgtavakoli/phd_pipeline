@@ -154,9 +154,17 @@ def run_training_pipeline(config):
             print(f"\n{'=' * 25} Starting Run: {yolo_experiment_run_name} {'=' * 25}")
             print(f"  - Training Data: {current_train_data_path}")
 
+        # Validation: use the configured real val set if it exists on THIS machine
+        # (cluster: set SMARTSDG_VAL_REAL), otherwise fall back to the training set
+        # so a headless run still completes (val metrics then reflect train data).
+        val_dir = val_data_path if (val_data_path and Path(val_data_path).is_dir()) else str(current_train_data_path)
+        if val_dir != val_data_path and distributed_utils.is_master_process():
+            print(f"  - ⚠️ val set not found ({val_data_path}); validating on the training set. "
+                  f"Set SMARTSDG_VAL_REAL to a real val folder to override.")
+
         data_yaml_content = {
             'train': str(current_train_data_path),
-            'val': val_data_path,
+            'val': val_dir,
             'test': paths_config['test_data_path'],
             'nc': num_classes,
             'names': class_names

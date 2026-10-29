@@ -50,6 +50,9 @@ defaults:
     containment_threshold: 0.75  # drop frame if a small box is >= this fraction inside a bigger one
     drop_truncated: true
     filter_overlaps: true
+    camera_noise: false
+    noise_gaussian_sigma: 5.0
+    noise_blur_sigma: 0.0
 
   training:                  # Object Detection training
     epochs: 50

@@ -186,6 +186,35 @@ print("CONVERTER_OK")
     return "occlusion/truncation/degenerate all drop whole frames; clean frame kept"
 
 
+def t_camera_realism():
+    """Real-camera post-processing perturbs PIXELS only: image geometry stays the
+    same, labels are copied unchanged, and the clean originals are preserved."""
+    import tempfile
+    import shutil
+    sys.path.insert(0, str(SMARTSDG / "src"))
+    import numpy as np
+    from PIL import Image
+    import camera_noise as cn
+    tmp = Path(tempfile.mkdtemp(prefix="sdgtest_realism_"))
+    cam = tmp / "src" / "Replicator"
+    cam.mkdir(parents=True)
+    Image.fromarray((np.ones((48, 64, 3)) * 120).astype("uint8")).save(cam / "a.png")
+    (cam / "a.txt").write_text("0 0.5 0.5 0.1 0.2\n")
+    try:
+        n_img, n_other = cn.process_dataset(tmp / "src", seed=1)
+        out = tmp / "src_real"
+        assert n_img == 1 and n_other == 1, (n_img, n_other)
+        oi, ol = out / "Replicator" / "a.png", out / "Replicator" / "a.txt"
+        assert oi.exists() and ol.exists(), "output image/label missing"
+        assert Image.open(oi).size == (64, 48), "geometry must be unchanged"
+        assert ol.read_text() == "0 0.5 0.5 0.1 0.2\n", "labels must be unchanged"
+        assert np.abs(np.array(Image.open(oi)).astype(int) - 120).mean() > 0, "pixels must change"
+        assert (cam / "a.png").exists(), "original must be preserved"
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
+    return "post-processing perturbs pixels; geometry+labels unchanged; originals kept"
+
+
 def t_convert_no_data_returns_tuple():
     """run_yolo_conversion must return a 2-tuple even when generation produced no
     frames — otherwise `dir, stats = run_yolo_conversion(...)` crashes with a
@@ -373,6 +402,28 @@ print("V3_OK")
     return "v3.0 template SDG config == config.yaml (full round-trip, all sections)"
 
 
+def t_training_curve():
+    """The training-curve endpoint parses results.csv into per-epoch precision /
+    recall / mAP50 / mAP50-95 series for the dashboard line chart."""
+    import shutil
+    sys.path.insert(0, str(ROOT / "dashboard"))
+    import server
+    d = ROOT / "_selftest_curve"
+    d.mkdir(exist_ok=True)
+    try:
+        (d / "results.csv").write_text(
+            "epoch,metrics/precision(B),metrics/recall(B),metrics/mAP50(B),metrics/mAP50-95(B)\n"
+            "1,0.5,0.4,0.45,0.30\n2,0.6,0.5,0.55,0.35\n")
+        c = server.training_curve("_selftest_curve")
+        assert c["epoch"] == [1, 2], c
+        assert c["precision"] == [0.5, 0.6], c
+        assert c["recall"] == [0.4, 0.5], c
+        assert c["map50"] == [0.45, 0.55] and c["map5095"] == [0.3, 0.35], c
+    finally:
+        shutil.rmtree(d, ignore_errors=True)
+    return "results.csv -> epoch/precision/recall/mAP50/mAP50-95 series"
+
+
 def t_console_progress():
     """The dashboard log reader must collapse tqdm carriage-return refreshes into
     a single live line (not one line per refresh), and treat CRLF cleanly."""
@@ -388,6 +439,50 @@ def t_console_progress():
     server._ingest_output("\rbar A\rbar B", committed, st)    # mid-bar -> live, not committed
     assert st["live"] == "bar A" and committed == [], (st, committed)
     return "tqdm \\r refreshes collapse to one committed line + a live line; CRLF clean"
+
+
+def t_frame_align():
+    """Inference frame alignment: _crop_resize_to maps any aspect ratio to the SDG
+    output dims (no distortion), and _sdg_target_for_model ignores non-weight paths."""
+    import numpy as np
+    sys.path.insert(0, str(ROOT / "dashboard"))
+    import server
+    for shape in [(720, 1280, 3), (480, 480, 3), (200, 1000, 3)]:
+        o = server._crop_resize_to(np.zeros(shape, dtype="uint8"), 640, 480)
+        assert o.shape[:2] == (480, 640), f"{shape} -> {o.shape[:2]}, expected (480,640)"
+    assert server._sdg_target_for_model("foo/bar.pt") is None, "non-weights path must be None"
+    return "frames crop+resize to SDG dims (640×480) for any input aspect ratio"
+
+
+def t_cluster_path_localize():
+    """Headless/cluster alignment: a passport's repo-internal data path recorded
+    on another machine (foreign absolute prefix) re-roots to THIS repo, and
+    SMARTSDG_VAL_REAL overrides the external val set."""
+    code = r'''
+import sys, os, shutil
+sys.path.insert(0, r"{od}")
+import main
+anchor = "SmartSDG/Datasets/yolo_experiments/__selftest_loc__"
+real = main.REPO_ROOT / anchor / "Replicator"
+real.mkdir(parents=True, exist_ok=True)
+try:
+    cfg = {{"paths": {{"base_data_dir": "/foreign/box/" + anchor + "/"}}}}
+    main._localize_paths(cfg)
+    assert os.path.isdir(cfg["paths"]["base_data_dir"]), cfg
+    assert "__selftest_loc__" in cfg["paths"]["base_data_dir"], cfg
+    os.environ["SMARTSDG_VAL_REAL"] = "/cluster/val"
+    cfg2 = {{"paths": {{"val_data_path": "C:/win/val", "base_data_dir": "x"}}}}
+    main._localize_paths(cfg2)
+    assert cfg2["paths"]["val_data_path"] == "/cluster/val", cfg2
+    os.environ.pop("SMARTSDG_VAL_REAL", None)
+    print("LOCALIZE_OK")
+finally:
+    shutil.rmtree(main.REPO_ROOT / "SmartSDG/Datasets/yolo_experiments/__selftest_loc__", ignore_errors=True)
+'''
+    r = subprocess.run([str(TRAIN_PYTHON), "-X", "utf8", "-c", code.format(od=OD_DIR)],
+                       capture_output=True, text=True)
+    assert "LOCALIZE_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
+    return "AAS data paths re-root to this repo; SMARTSDG_VAL_REAL overrides val"
 
 
 def t_label_cache_cleanup():
@@ -411,6 +506,22 @@ print("CACHE_OK")
                        cwd=str(OD_DIR), capture_output=True, text=True)
     assert "CACHE_OK" in r.stdout, (r.stderr or r.stdout).strip()[-400:]
     return "stale label caches (sibling + inside) cleared before training"
+
+
+def t_inference_imgsz():
+    """Inference imgsz resolves to the model's TRAINED imgsz by default (not the
+    ultralytics 640 default), and an explicit request overrides it."""
+    import types
+    sys.path.insert(0, str(ROOT / "dashboard"))
+    import server
+    m = types.SimpleNamespace(ckpt={"train_args": {"imgsz": 480}}, overrides={})
+    assert server._model_trained_imgsz(m) == 480, "should read trained imgsz from ckpt"
+    assert server._resolve_imgsz(m, "800") == 800, "explicit request must win"
+    assert server._resolve_imgsz(m, None) == 480, "blank -> trained imgsz"
+    assert server._resolve_imgsz(m, "") == 480, "empty -> trained imgsz"
+    m2 = types.SimpleNamespace(ckpt=None, overrides={})
+    assert server._model_trained_imgsz(m2) == 640, "fallback default 640"
+    return "inference imgsz = trained imgsz by default, explicit override honoured"
 
 
 def t_exp_routing():
@@ -625,12 +736,15 @@ def main():
         check("AAS template vs class-ID registry", t_aas_template)
         check("python modules compile", t_compile)
         check("converter quality filters (synthetic)", t_converter_filters)
+        check("camera-realism post-processing", t_camera_realism)
         check("converter no-data returns tuple", t_convert_no_data_returns_tuple)
         check("geometric-collapse overlap filter", t_overlap_collapse)
         check("AAS passport module roundtrip", t_passport_roundtrip)
         check("SDG config from AAS (+ fallback)", t_aas_sdg_config)
         check("v3.0 template faithful to config.yaml", t_v3_template_faithful)
         check("console progress single-line", t_console_progress)
+        check("training-curve from results.csv", t_training_curve)
+        check("inference imgsz matches training", t_inference_imgsz)
         check("AAS files valid (IEC 63278)", t_aas_valid)
         _print_summary()
         return
@@ -645,12 +759,17 @@ def main():
     check("interpreters + dependencies", t_interpreters)
     check("python modules compile", t_compile)
     check("converter quality filters (synthetic)", t_converter_filters)
+    check("camera-realism post-processing", t_camera_realism)
     check("converter no-data returns tuple", t_convert_no_data_returns_tuple)
     check("geometric-collapse overlap filter", t_overlap_collapse)
     check("AAS passport module roundtrip", t_passport_roundtrip)
     check("SDG config from AAS (+ fallback)", t_aas_sdg_config)
     check("v3.0 template faithful to config.yaml", t_v3_template_faithful)
     check("console progress single-line", t_console_progress)
+    check("training-curve from results.csv", t_training_curve)
+    check("inference imgsz matches training", t_inference_imgsz)
+    check("inference frame alignment to SDG", t_frame_align)
+    check("cluster path localization", t_cluster_path_localize)
     check("stale label cache cleanup", t_label_cache_cleanup)
     check("exp-folder routing", t_exp_routing)
     check("AL strategies importable", t_al_strategies)

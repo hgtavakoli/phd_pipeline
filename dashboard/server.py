@@ -350,6 +350,48 @@ def _read_al_metrics(csv_path):
         return {}
 
 
+def training_curve(rel):
+    """Per-epoch validation metrics from a run's results.csv, for the dashboard
+    line chart: precision, recall, mAP50, mAP50-95 over epochs."""
+    import csv
+    import math
+    run = _safe_path(rel)
+    csvp = run / "results.csv"
+    if not csvp.exists():
+        cands = list(run.rglob("results.csv")) if run.is_dir() else []
+        csvp = cands[0] if cands else csvp
+    if not csvp.exists():
+        return {"error": "no results.csv yet for this run (training may still be on epoch 0)"}
+    rows = list(csv.DictReader(open(csvp)))
+    if not rows:
+        return {"error": "results.csv is empty"}
+    cols = {c.strip(): c for c in rows[0]}
+
+    def series(key):
+        c = cols.get(key)
+        if not c:
+            return []
+        out = []
+        for r in rows:
+            try:
+                v = float(r[c])
+                out.append(None if math.isnan(v) else round(v, 4))
+            except (ValueError, TypeError):
+                out.append(None)
+        return out
+
+    ep = series("epoch")
+    epochs = [int(e) if e is not None else i + 1 for i, e in enumerate(ep)] or list(range(1, len(rows) + 1))
+    return {
+        "epoch": epochs,
+        "precision": series("metrics/precision(B)"),
+        "recall": series("metrics/recall(B)"),
+        "map50": series("metrics/mAP50(B)"),
+        "map5095": series("metrics/mAP50-95(B)"),
+        "csv": str(csvp.relative_to(ROOT)),
+    }
+
+
 def record_to_aas(job):
     """Write provenance into the dataset AAS at job completion:
       A) GenerationParameters for SDG runs,
@@ -962,6 +1004,12 @@ def build_sdg_cmd(p):
         cmd += ["--max_bounces", str(int(p["max_bounces"]))]
     if p.get("denoiser") in ("on", "off"):
         cmd += ["--denoiser", p["denoiser"]]
+    if p.get("camera_noise"):
+        cmd.append("--camera_noise")
+        if p.get("noise_gaussian_sigma") not in (None, ""):
+            cmd += ["--noise_gaussian_sigma", str(float(p["noise_gaussian_sigma"]))]
+        if p.get("noise_blur_sigma") not in (None, "", 0, 0.0):
+            cmd += ["--noise_blur_sigma", str(float(p["noise_blur_sigma"]))]
     return cmd
 
 
@@ -1106,6 +1154,79 @@ def dataset_preview(rel, limit=12, camera=None):
     return [str(p.relative_to(ROOT)) for p in imgs[:limit]]
 
 
+def _model_trained_imgsz(model, default=640):
+    """Best-effort: the imgsz a YOLO checkpoint was trained at. Ultralytics'
+    predict default is 640 regardless of how the model was trained, so for best
+    accuracy inference should run at the SAME imgsz as training."""
+    try:
+        ck = getattr(model, "ckpt", None)
+        if isinstance(ck, dict):
+            v = (ck.get("train_args") or {}).get("imgsz")
+            if isinstance(v, (list, tuple)):
+                v = v[0]
+            if v:
+                return int(v)
+    except Exception:
+        pass
+    try:
+        v = (getattr(model, "overrides", {}) or {}).get("imgsz")
+        if v:
+            return int(v[0] if isinstance(v, (list, tuple)) else v)
+    except Exception:
+        pass
+    return default
+
+
+def _resolve_imgsz(model, requested):
+    """A user-supplied imgsz wins; otherwise use the model's trained imgsz."""
+    if requested:
+        try:
+            return int(requested)
+        except (TypeError, ValueError):
+            pass
+    return _model_trained_imgsz(model)
+
+
+def _sdg_target_for_model(mpath):
+    """(width, height) of the SDG output the model was trained on, read from the
+    dataset passport's GenerationParameters. Lets inference crop/resize live frames
+    to the exact geometry the model learned. Returns None if not resolvable."""
+    try:
+        from aas_passport import Passport
+        p = Path(mpath)
+        if not (p.suffix == ".pt" and p.parent.name == "weights"):
+            return None
+        ds = p.parent.parent.parent.name           # <dataset>/<camera>/weights/best.pt
+        pp = Passport.resolve_path(ds)
+        if not pp:
+            return None
+        gen = Passport.from_file(pp).read_section("GenerationParameters")
+        w, h = gen.get("width"), gen.get("height")
+        if w and h:
+            return int(w), int(h)
+    except Exception:
+        pass
+    return None
+
+
+def _crop_resize_to(frame, w, h):
+    """Center-crop a frame to the target aspect ratio, then resize to (w, h) — so
+    an arbitrary camera/image input matches the SDG output geometry without
+    distortion (the model then letterboxes it to imgsz exactly as in training)."""
+    import cv2
+    fh, fw = frame.shape[:2]
+    if not fw or not fh:
+        return frame
+    tar, cur = w / h, fw / fh
+    if cur > tar:                                  # too wide -> crop sides
+        nw = max(1, int(round(fh * tar))); x0 = (fw - nw) // 2
+        frame = frame[:, x0:x0 + nw]
+    elif cur < tar:                                # too tall -> crop top/bottom
+        nh = max(1, int(round(fw / tar))); y0 = (fh - nh) // 2
+        frame = frame[y0:y0 + nh, :]
+    return cv2.resize(frame, (w, h))
+
+
 # --- HTTP handler -----------------------------------------------------------------
 
 class Handler(BaseHTTPRequestHandler):
@@ -1157,6 +1278,8 @@ class Handler(BaseHTTPRequestHandler):
         model_arg = q.get("model", [""])[0]
         source = q.get("source", ["0"])[0]
         conf = float(q.get("conf", ["0.25"])[0])
+        imgsz_req = q.get("imgsz", [None])[0]
+        align = q.get("align", ["0"])[0] == "1"   # crop+resize frames to the SDG geometry
 
         mpath = (OD_DIR / Path(model_arg).name) if model_arg and not Path(model_arg).is_absolute() else Path(model_arg)
         if not Path(mpath).exists():
@@ -1181,8 +1304,14 @@ class Handler(BaseHTTPRequestHandler):
         if not cap or not cap.isOpened():
             self.send_error(400, f"could not open source: {source}")
             return
-
         model = YOLO(str(mpath))
+        imgsz = _resolve_imgsz(model, imgsz_req)   # match the model's training imgsz unless overridden
+        # Align frames to the SDG output geometry recorded in the model's passport
+        # (falls back to the validated 640x480 if the passport has no dims).
+        sdg_wh = (_sdg_target_for_model(mpath) or (640, 480)) if align else None
+        if sdg_wh:
+            self_log = f"aligning frames to SDG output {sdg_wh[0]}x{sdg_wh[1]}"
+            print(f"--- live inference: {self_log} (imgsz={imgsz}) ---")
         is_webcam = isinstance(cap_src, int)
         _stream_active = True
         log_pipeline_event("inference", "live_started",
@@ -1210,7 +1339,9 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     break  # end of video file, or camera gone
                 misses = 0
-                res = model.predict(frame, conf=conf, verbose=False)[0]
+                if sdg_wh:
+                    frame = _crop_resize_to(frame, *sdg_wh)
+                res = model.predict(frame, conf=conf, imgsz=imgsz, verbose=False)[0]
                 annotated = res.plot()  # BGR ndarray with boxes drawn
                 ok2, jpg = cv2.imencode(".jpg", annotated, [cv2.IMWRITE_JPEG_QUALITY, 80])
                 if not ok2:
@@ -1281,6 +1412,15 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/results":
             return self._json(list_results())
 
+        if route == "/api/training_curve":
+            rel = q.get("rel", [""])[0]
+            if not rel:
+                return self._json({"error": "no run selected"}, 400)
+            try:
+                return self._json(training_curve(rel))
+            except Exception as e:
+                return self._json({"error": str(e)}, 400)
+
         if route == "/api/aas":
             # Top-level pipeline configs + dated per-dataset configs, as paths
             # relative to AAS/ (newest dataset configs first).
@@ -1334,6 +1474,8 @@ class Handler(BaseHTTPRequestHandler):
             folder_arg = q.get("folder", [""])[0]
             model_arg = q.get("model", [""])[0]
             conf = float(q.get("conf", ["0.25"])[0])
+            imgsz_req = q.get("imgsz", [None])[0]
+            align = q.get("align", ["0"])[0] == "1"
             limit = min(int(q.get("limit", ["30"])[0]), 200)
             try:
                 import base64
@@ -1359,10 +1501,19 @@ class Handler(BaseHTTPRequestHandler):
                 if not imgs:
                     return self._json([])
                 model = YOLO(str(mpath))
+                imgsz = _resolve_imgsz(model, imgsz_req)
+                # Align inputs to the SDG output geometry from the model's passport
+                # (boxes are normalised, so predicting AND thumbnailing the same
+                # aligned frame keeps the overlay correct).
+                sdg_wh = (_sdg_target_for_model(mpath) or (640, 480)) if align else None
                 out = []
                 for img_path in imgs:
                     try:
-                        res = model.predict(str(img_path), conf=conf, verbose=False)[0]
+                        frame = cv2.imread(str(img_path))
+                        if frame is not None and sdg_wh:
+                            frame = _crop_resize_to(frame, *sdg_wh)
+                        pred_input = frame if frame is not None else str(img_path)
+                        res = model.predict(pred_input, conf=conf, imgsz=imgsz, verbose=False)[0]
                         boxes = []
                         if res.boxes is not None:
                             for box in res.boxes:
@@ -1370,7 +1521,6 @@ class Handler(BaseHTTPRequestHandler):
                                 xywhn = box.xywhn[0].tolist()  # [cx,cy,w,h] normalised
                                 boxes.append([cls] + xywhn)
                         # thumbnail: resize to 220 px wide, encode as base64 JPEG
-                        frame = cv2.imread(str(img_path))
                         data_uri = ""
                         if frame is not None:
                             h, w = frame.shape[:2]
@@ -1488,6 +1638,12 @@ class Handler(BaseHTTPRequestHandler):
         if route == "/api/defaults":
             # Master cross-stage defaults (pipeline.yaml) for the dashboard forms.
             return self._json(load_defaults())
+
+        if route == "/api/paths":
+            return self._json({
+                "isaac_python": str(ISAAC_PYTHON),
+                "smartsdg": str(SMARTSDG),
+            })
 
         if route == "/api/docker_status":
             return self._json(docker_status())
@@ -1609,6 +1765,7 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---- POST ----
     def do_POST(self):
+        global ISAAC_PYTHON, TRAIN_PYTHON   # /api/save_path may reassign these; declare before any use
         length = int(self.headers.get("Content-Length", 0))
         try:
             payload = json.loads(self.rfile.read(length) or b"{}")
@@ -1737,6 +1894,26 @@ class Handler(BaseHTTPRequestHandler):
             ok, err = start_job(f"Active Learning ({payload.get('strategy', 'ppal_feat')})", cmd, cwd,
                                 meta={**payload, "stage": "AL"})
             return self._json({"ok": ok, "error": err, "pool": n_pool, "val": n_val})
+
+        if route == "/api/save_path":
+            key = payload.get("key", "")
+            if key not in ("isaac_python", "train_python", "val_real"):
+                return self._json({"ok": False, "error": f"unknown key: {key}"}, 400)
+            val = (payload.get("value") or "").strip()
+            cfg = _machine_cfg()
+            if val:
+                cfg[key] = val
+            elif key in cfg:
+                del cfg[key]
+            MACHINE_CFG.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+            # Apply immediately to the running server so /api/run_sdg uses the new path
+            if key == "isaac_python":
+                ISAAC_PYTHON = val or config_paths.resolve_isaac_python()
+                return self._json({"ok": True, "resolved": str(ISAAC_PYTHON)})
+            elif key == "train_python":
+                TRAIN_PYTHON = val or config_paths.resolve_train_python()
+                return self._json({"ok": True, "resolved": str(TRAIN_PYTHON)})
+            return self._json({"ok": True})
 
         if route == "/api/docker_toggle":
             _set_machine_cfg("docker_enabled", bool(payload.get("enabled")))
