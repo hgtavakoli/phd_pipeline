@@ -1789,7 +1789,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             gen = llm.chat_stream(payload.get("messages", []), payload.get("model"),
-                                  payload.get("prompt"), payload.get("temperature"))
+                                  payload.get("prompt"), payload.get("temperature"),
+                                  bool(payload.get("rag")))
             try:
                 for event in gen:
                     self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
@@ -1800,9 +1801,17 @@ class Handler(BaseHTTPRequestHandler):
                 gen.close()                     # closes the Ollama connection -> it stops generating
             return
 
+        if route == "/api/rag_build":           # LLM assistant: (re)build the RAG index of docs/
+            try:
+                import rag
+                return self._json({"ok": True, "message": rag.build(log=lambda *_: None)})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e)})
+
         if route == "/api/chat":                # LLM assistant: one chat turn
             return self._json(llm.chat(payload.get("messages", []), payload.get("model"),
-                                       payload.get("prompt"), payload.get("temperature")))
+                                       payload.get("prompt"), payload.get("temperature"),
+                                       bool(payload.get("rag"))))
 
         if route == "/api/run_sdg":
             try:

@@ -46,11 +46,25 @@ def load_prompt(name=None):
     raise ValueError(f"unknown prompt '{name}'. Available: {', '.join(list_prompts())}")
 
 
-def build_messages(messages, prompt=None):
-    """[system prompt] + conversation. An empty prompt file = no system message at all."""
-    system = load_prompt(prompt)
+def build_messages(messages, prompt=None, use_rag=False, k=4):
+    """
+    [system prompt] + conversation  ->  (messages_for_ollama, sources)
+
+    use_rag=True (Phase 4): the LAST user question is used as a search query,
+    the top-k doc chunks are retrieved and pasted into the prompt where it says
+    {context}. A prompt without {context} gets them appended at the end.
+    An empty prompt file (and no RAG) = no system message at all.
+    """
+    system, sources = load_prompt(prompt), []
+    if use_rag:
+        import rag                                   # imported here: rag.py imports llm.py
+        question = next((m["content"] for m in reversed(messages) if m["role"] == "user"), "")
+        hits = rag.search(question, k=k)
+        sources = [{k_: h[k_] for k_ in ("score", "source", "title")} for h in hits]
+        ctx = rag.format_context(hits)
+        system = system.replace("{context}", ctx) if "{context}" in system else system + "\n\n<context>\n" + ctx + "\n</context>"
     head = [{"role": "system", "content": system}] if system else []
-    return head + list(messages)
+    return head + list(messages), sources
 
 
 # --------------------------------------------------------------- sampling ---
@@ -99,24 +113,25 @@ def _stats(r):
 
 
 # ------------------------------------------------------------------- chat ---
-def chat(messages, model=None, prompt=None, temperature=None):
+def chat(messages, model=None, prompt=None, temperature=None, use_rag=False):
     """
     One full answer (no streaming). messages = conversation so far:
         [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}, ...]
     The LLM is stateless — "memory" = the caller resends the whole history.
     """
     try:
-        body = {"model": model or DEFAULT_MODEL, "messages": build_messages(messages, prompt),
+        msgs, sources = build_messages(messages, prompt, use_rag)
+        body = {"model": model or DEFAULT_MODEL, "messages": msgs,
                 "stream": False, "options": _options(temperature)}
         r = _request("/api/chat", body)
     except urllib.error.URLError as e:
         return {"ok": False, "error": f"Cannot reach Ollama at {OLLAMA_URL} — is it running? ({e.reason})"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
-    return {"ok": True, "content": r["message"]["content"], "stats": _stats(r)}
+    return {"ok": True, "content": r["message"]["content"], "stats": _stats(r), "sources": sources}
 
 
-def chat_stream(messages, model=None, prompt=None, temperature=None):
+def chat_stream(messages, model=None, prompt=None, temperature=None, use_rag=False):
     """
     STREAMING version: a generator yielding events while the model writes.
     Ollama streams NDJSON = one JSON object per line:
@@ -127,10 +142,12 @@ def chat_stream(messages, model=None, prompt=None, temperature=None):
     Closing the generator early closes the connection -> Ollama stops generating.
     """
     try:
-        msgs = build_messages(messages, prompt)
-    except ValueError as e:
+        msgs, sources = build_messages(messages, prompt, use_rag)
+    except Exception as e:                       # unknown prompt, no index, embed model missing...
         yield {"error": str(e)}
         return
+    if use_rag:
+        yield {"sources": sources}               # first event: show WHAT was retrieved
     body = json.dumps({"model": model or DEFAULT_MODEL, "messages": msgs,
                        "stream": True, "options": _options(temperature)}).encode("utf-8")
     req = urllib.request.Request(OLLAMA_URL + "/api/chat", data=body,
