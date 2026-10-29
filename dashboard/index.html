@@ -25,6 +25,14 @@
   .tab{display:none}.tab.show{display:block}
   h2{font-size:1rem;color:var(--accent);margin:18px 0 10px}
   h3{font-size:.9rem;color:var(--text2);margin:12px 0 8px}
+  /* LLM assistant chat */
+  #chatLog{height:55vh;overflow-y:auto;display:flex;flex-direction:column;gap:10px;padding:8px;background:var(--panel2);border:1px solid var(--border);border-radius:8px;margin-bottom:10px}
+  .msg{max-width:80%;padding:8px 12px;border-radius:10px;white-space:pre-wrap;word-wrap:break-word}
+  .msg.user{align-self:flex-end;background:#1f3b5c}
+  .msg.assistant{align-self:flex-start;background:var(--panel);border:1px solid var(--border)}
+  .msg.error{align-self:flex-start;color:var(--red)}
+  .msg .stats{display:block;margin-top:4px;font-size:.75rem;color:var(--text2)}
+  #chatInput{flex:1;min-height:60px;background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:8px;font:inherit;resize:vertical}
   .card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px;margin-bottom:16px}
   label{display:block;font-size:.8rem;color:var(--text2);margin-bottom:3px}
   select,input[type=number],input[type=text]{background:var(--panel2);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 8px;font-size:.88rem;max-width:100%;box-sizing:border-box}
@@ -113,6 +121,7 @@
   <button data-tab="results" onclick="showTab('results')">🏋 Results</button>
   <button data-tab="pipelog" onclick="showTab('pipelog')">📜 Pipeline Log</button>
   <button data-tab="docs" onclick="showTab('docs')">📚 Docs</button>
+  <button data-tab="chat" onclick="showTab('chat')">🤖 Assistant</button>
 </nav>
 
 <main>
@@ -553,6 +562,23 @@ git push</pre>
   </div>
 </div>
 
+<!-- ============ 🤖 LLM ASSISTANT (local, via Ollama) ============ -->
+<div class="tab" id="tab-chat">
+  <div class="card">
+    <h2>🤖 Pipeline Assistant <span class="muted" style="font-size:.8rem">local LLM via Ollama</span></h2>
+    <div class="row" style="margin-bottom:8px">
+      <label>Model <select id="chatModel"></select></label>
+      <button class="secondary" onclick="chatClear()">🗑 New chat</button>
+      <span class="muted" id="chatStatus"></span>
+    </div>
+    <div id="chatLog"></div>
+    <div class="row" style="display:flex;gap:8px;align-items:flex-end">
+      <textarea id="chatInput" placeholder="Ask about the pipeline…  (Enter = send, Shift+Enter = new line)"></textarea>
+      <button id="chatSend" onclick="chatSend()">Send</button>
+    </div>
+  </div>
+</div>
+
 </main>
 
 <script>
@@ -603,6 +629,7 @@ function showTab(name){
   if(name==='inference'){ infLoadModels(); if(infMode()==='live') loadLiveModels(); }
   if(name!=='inference') lvStop();
   if(name==='cl'){ clInit(); }
+  if(name==='chat'){ chatInit(); }
   if(name==='pipelog') loadPipelog();
   if(name==='docs') loadDockerStatus();
 }
@@ -1625,6 +1652,100 @@ Object.assign(INFO, {
 applyInfoIcons();
 const _origShowTab = showTab;
 showTab = function(n){ _origShowTab(n); applyInfoIcons(); };
+
+// ---------- 🤖 LLM assistant ----------
+// The conversation lives HERE in the browser. The LLM has no memory:
+// every request sends the whole history, so it "remembers" earlier turns.
+let chatHistory = [];
+let chatReady = false;
+
+async function chatInit(){
+  if(chatReady) return; chatReady = true;
+  $('chatInput').addEventListener('keydown', e=>{
+    if(e.key==='Enter' && !e.shiftKey){ e.preventDefault(); chatSend(); }
+  });
+  const r = await (await fetch('/api/llm_models')).json();
+  const sel = $('chatModel');
+  sel.innerHTML = '';
+  (r.models.length ? r.models : [r.default]).forEach(m=>{
+    const o = document.createElement('option'); o.value = o.textContent = m;
+    if(m===r.default) o.selected = true; sel.appendChild(o);
+  });
+  $('chatStatus').textContent = r.ok ? `${r.models.length} model(s) found` : '⚠ Ollama not reachable — run "ollama serve"';
+}
+
+function chatAdd(role, text, stats){
+  const d = document.createElement('div');
+  d.className = 'msg ' + role;
+  d.textContent = text;                       // textContent = safe, no HTML injection
+  if(stats){
+    const s = document.createElement('span'); s.className = 'stats';
+    s.textContent = `${stats.model} · prompt ${stats.prompt_tokens} tok · output ${stats.output_tokens} tok · ${stats.tokens_per_s} tok/s`;
+    d.appendChild(s);
+  }
+  $('chatLog').appendChild(d);
+  $('chatLog').scrollTop = $('chatLog').scrollHeight;
+  return d;
+}
+
+// Streaming: the server sends NDJSON (one JSON object per line) while the
+// model is still generating. We read the response body piece by piece.
+let chatAbort = null;                         // AbortController -> lets us cancel the request
+
+async function chatSend(){
+  if(chatAbort){ chatAbort.abort(); return; } // button acts as "Stop" while generating
+  const text = $('chatInput').value.trim();
+  if(!text) return;
+  $('chatInput').value = '';
+  chatHistory.push({role:'user', content:text});
+  chatAdd('user', text);
+  const bubble = chatAdd('assistant', '');
+  let answer = '';
+  chatAbort = new AbortController();
+  $('chatSend').textContent = '■ Stop';
+  try{
+    const resp = await fetch('/api/chat_stream', {
+      method:'POST', headers:{'Content-Type':'application/json'},
+      body: JSON.stringify({messages: chatHistory, model: $('chatModel').value}),
+      signal: chatAbort.signal
+    });
+    const reader = resp.body.getReader();
+    const decoder = new TextDecoder();
+    let buf = '';
+    while(true){
+      const {value, done} = await reader.read();   // one network chunk (may hold several lines, or half a line)
+      if(done) break;
+      buf += decoder.decode(value, {stream:true});
+      const lines = buf.split('\n');
+      buf = lines.pop();                          // keep the unfinished last line for next round
+      for(const line of lines){
+        if(!line.trim()) continue;
+        const ev = JSON.parse(line);
+        if(ev.token){ answer += ev.token; bubble.textContent = answer; $('chatLog').scrollTop = $('chatLog').scrollHeight; }
+        if(ev.error){ bubble.className = 'msg error'; bubble.textContent = '⚠ ' + ev.error; }
+        if(ev.done){ chatStats(bubble, ev.stats); }
+      }
+    }
+  } catch(e){
+    if(e.name !== 'AbortError'){ bubble.className = 'msg error'; bubble.textContent = '⚠ ' + e; }
+    else { chatStats(bubble, null, '(stopped)'); }
+  }
+  if(answer) chatHistory.push({role:'assistant', content:answer});  // keep even a partial answer
+  else chatHistory.pop();                                            // nothing came back: forget the question
+  chatAbort = null;
+  $('chatSend').textContent = 'Send';
+  $('chatInput').focus();
+}
+
+function chatStats(bubble, stats, note){
+  const s = document.createElement('span'); s.className = 'stats';
+  s.textContent = stats
+    ? `${stats.model} · prompt ${stats.prompt_tokens} tok · output ${stats.output_tokens} tok · ${stats.tokens_per_s} tok/s`
+    : note;
+  bubble.appendChild(s);
+}
+
+function chatClear(){ chatHistory = []; $('chatLog').innerHTML = ''; }
 </script>
 </body>
 </html>

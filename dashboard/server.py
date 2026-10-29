@@ -294,6 +294,7 @@ def stop_job():
 
 
 # --- AAS helpers (single source of truth lives in aas_passport.py at repo root) ---
+import llm  # local LLM assistant (Ollama) — see dashboard/llm.py
 from aas_passport import (  # noqa: E402
     _aas_find_node, _aas_get_property, _aas_set_properties, _aas_prop,
     _aas_parent_collection, _aas_upsert_section, _aas_append_run, _aas_read_record,
@@ -1386,6 +1387,11 @@ class Handler(BaseHTTPRequestHandler):
                 return self._json({"error": str(e), "indices": []})
             return self._json({"indices": found})
 
+        if route == "/api/llm_models":          # LLM assistant: installed Ollama models
+            try:
+                return self._json({"ok": True, "models": llm.list_models(), "default": llm.DEFAULT_MODEL})
+            except Exception as e:
+                return self._json({"ok": False, "error": str(e), "models": [], "default": llm.DEFAULT_MODEL})
         if route == "/api/status":
             j = _job
             return self._json({
@@ -1772,6 +1778,27 @@ class Handler(BaseHTTPRequestHandler):
         except json.JSONDecodeError:
             return self._json({"ok": False, "error": "bad JSON"}, 400)
         route = urllib.parse.urlparse(self.path).path
+
+        if route == "/api/chat_stream":         # LLM assistant: streamed chat turn (NDJSON)
+            # No Content-Length: we don't know the size in advance. The server
+            # speaks HTTP/1.0, so the browser reads until we close the connection.
+            self.send_response(200)
+            self.send_header("Content-Type", "application/x-ndjson")
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            gen = llm.chat_stream(payload.get("messages", []), payload.get("model"))
+            try:
+                for event in gen:
+                    self.wfile.write((json.dumps(event) + "\n").encode("utf-8"))
+                    self.wfile.flush()          # push each token to the browser NOW
+            except (BrokenPipeError, ConnectionResetError):
+                pass                            # user pressed Stop / closed the tab
+            finally:
+                gen.close()                     # closes the Ollama connection -> it stops generating
+            return
+
+        if route == "/api/chat":                # LLM assistant: one chat turn
+            return self._json(llm.chat(payload.get("messages", []), payload.get("model")))
 
         if route == "/api/run_sdg":
             try:
