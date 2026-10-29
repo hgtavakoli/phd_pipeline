@@ -1,4 +1,4 @@
-# CLAUDE.md — project memory for SmartSDG Pipeline v2
+asd# CLAUDE.md — project memory for SmartSDG Pipeline v2
 
 Read this first. It captures everything needed to work here WITHOUT re-exploring
 the codebase, so keep edits surgical and avoid re-reading large files. Verify with
